@@ -373,7 +373,7 @@ struct afl_cmp_tag {
   u32 cnt;
   u16 id;
   u16 parent_id;
-  //u8 shape;
+  u8 shape;
 
 } __attribute__((packed));
 

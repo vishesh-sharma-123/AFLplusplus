@@ -385,10 +385,11 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
   }
 
 #define TAG_ASSIGN(idx) \
-  if (tags[idx].cnt == 0) { \
+  if (tags[idx].cnt == 0 || (SHAPE_BYTES(h->shape) >= 4 && h->shape > tags[idx].shape)) { \
     tags[idx].cnt = h->cnt; \
     tags[idx].id = h->id; \
     tags[idx].parent_id = parent_cmp_id; \
+    tags[idx].shape = h->shape; \
   }
 
   if (SHAPE_BYTES(h->shape) >= 8) {
@@ -999,7 +1000,7 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
 
   }
   
-  qsort_r(sorted_cmps, sorted_cmps_len, sizeof(u16), compare_cmp_cnt, &cmp_map);
+  qsort_r(sorted_cmps, sorted_cmps_len, sizeof(u16), compare_cmp_cnt, cmp_map);
 
   u32 i;
   for (i = 0; i < sorted_cmps_len; ++i) {
@@ -1025,6 +1026,12 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
   }
 
   r = 0;
+
+  // debgug print tags
+  for (i = 0; i < len; ++i) {
+    fprintf(stderr, "'%c' %x [%d %d %d]\n", buf[i], buf[i], tags[i].id, tags[i].cnt, SHAPE_BYTES(tags[i].shape));
+  }
+  fprintf(stderr, "=====================\n");
 
 exit_its:
   new_hit_cnt = afl->queued_paths + afl->unique_crashes;

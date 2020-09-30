@@ -810,9 +810,8 @@ int main(int argc, char **argv_orig, char **envp) {
 
       case 'R':
 
-        FATAL(
-            "Radamsa is now a custom mutator, please use that "
-            "(custom_mutators/radamsa/).");
+        if (afl->fmtrev_enabled) { FATAL("Multiple -R options not supported"); }
+        afl->fmtrev_enabled = 1;
 
         break;
 
