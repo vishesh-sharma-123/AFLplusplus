@@ -796,6 +796,26 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len) {
 
 ///// Input to State stage
 
+/*
+TODO
+
+save in another tmp map the cmp map after colorization. use that map in the old
+code, not the one in shared mem
+
+sort cmps in temporal order
+
+do not skip of pass stats fail, but pass a boolean and skip the executions
+
+use another flag similar to pass stats but for i2s, call it i2s_stats and use it
+like old pass stats
+
+on a match, before executin the put, bitflip the pattern and execute the cmplog
+binary. if we see the same change in the cmp operand, taint the pattern.
+
+apply weizz tagging. maybe tupni style?
+
+*/
+
 // afl->queue_cur->exec_cksum
 u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
                         u64 exec_cksum) {
