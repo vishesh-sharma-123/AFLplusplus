@@ -24,6 +24,9 @@
 
  */
 
+// TODO get rid of qsort_r, it is GNU only
+#define _GNU_SOURCE // for qsort_r
+
 #include <limits.h>
 #include "afl-fuzz.h"
 #include "cmplog.h"
@@ -522,7 +525,7 @@ static void try_to_add_to_dict(afl_state_t *afl, u64 v, u8 shape) {
 
 }
 
-static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len) {
+static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len, u8 must_skip) {
 
   struct cmp_header *h = &afl->shm.cmp_map->headers[key];
   u32                i, j, idx;
@@ -534,6 +537,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len) {
   // opt not in the paper
   u32 fails;
   u8  found_one = 0;
+  u8  failed_once = 0;
 
   /* loop cmps are useless, detect and ignore them */
   u64 s_v0, s_v1;
@@ -621,6 +625,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len) {
     }
 
     if (status == 1) { found_one = 1; }
+    if (fails) failed_once = 1;
 
     // If failed, add to dictionary
     if (fails == 8) {
@@ -649,6 +654,12 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len) {
   if (!found_one && afl->pass_stats[key].faileds < 0xff) {
 
     afl->pass_stats[key].faileds++;
+
+  }
+  
+  if (!found_one && !failed_once && afl->pass_stats[key].not_i2s < 0xff) {
+
+    afl->pass_stats[key].not_i2s++;
 
   }
 
@@ -800,27 +811,38 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len) {
 TODO
 
 save in another tmp map the cmp map after colorization. use that map in the old
-code, not the one in shared mem
+code, not the one in shared mem (done)
 
-sort cmps in temporal order
+sort cmps in temporal order (done)
 
 do not skip of pass stats fail, but pass a boolean and skip the executions
 
 use another flag similar to pass stats but for i2s, call it i2s_stats and use it
-like old pass stats
+like old pass stats (done)
 
 on a match, before executin the put, bitflip the pattern and execute the cmplog
 binary. if we see the same change in the cmp operand, taint the pattern.
 
-apply weizz tagging. maybe tupni style?
+apply weizz tagging.
+
+add cnt field collection to qemu mode.
 
 */
+
+static int compare_cmp_cnt(const void *p1, const void *p2, void *arg) {
+
+  struct cmp_map* m = arg;
+  return m->headers[*(u16*)p1].cnt - m->headers[*(u16*)p2].cnt;
+
+}
 
 // afl->queue_cur->exec_cksum
 u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
                         u64 exec_cksum) {
 
   u8 r = 1;
+  struct cmp_map* cmp_map = NULL;
+
   if (afl->orig_cmp_map == NULL) {
 
     afl->orig_cmp_map = ck_alloc_nozero(sizeof(struct cmp_map));
@@ -846,6 +868,9 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
   memset(afl->shm.cmp_map->headers, 0, sizeof(afl->shm.cmp_map->headers));
 
   if (unlikely(common_fuzz_cmplog_stuff(afl, buf, len))) { return 1; }
+  
+  cmp_map = ck_alloc_nozero(sizeof(struct cmp_map));
+  memcpy(cmp_map, afl->shm.cmp_map, sizeof(struct cmp_map));
 
   u64 orig_hit_cnt, new_hit_cnt;
   u64 orig_execs = afl->fsrv.total_execs;
@@ -856,45 +881,60 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
   afl->stage_max = 0;
   afl->stage_cur = 0;
 
+  u16 sorted_cmps[CMP_MAP_W];
+  u32 sorted_cmps_len = 0;
+
   u32 k;
   for (k = 0; k < CMP_MAP_W; ++k) {
 
-    if (!afl->shm.cmp_map->headers[k].hits) { continue; }
+    if (!cmp_map->headers[k].hits) { continue; }
 
-    if (afl->pass_stats[k].total &&
-        (rand_below(afl, afl->pass_stats[k].total) >=
-             afl->pass_stats[k].faileds ||
-         afl->pass_stats[k].total == 0xff)) {
+    sorted_cmps[sorted_cmps_len++] = (u16)k;
 
-      afl->shm.cmp_map->headers[k].hits = 0;  // ignore this cmp
-
+    if (afl->pass_stats[k].total) {
+    
+      if (afl->pass_stats[k].not_i2s > 2)
+        cmp_map->headers[k].hits = 0;  // ignore this cmp
+    
+      if (afl->pass_stats[k].total == 0xff || rand_below(afl, afl->pass_stats[k].total) >= afl->pass_stats[k].faileds)
+         afl->shm.cmp_map->headers[k].hits = 0;  // skip fuzz this cmp
+    
     }
 
-    if (afl->shm.cmp_map->headers[k].type == CMP_TYPE_INS) {
+    if (cmp_map->headers[k].type == CMP_TYPE_INS) {
 
       afl->stage_max +=
-          MIN((u32)(afl->shm.cmp_map->headers[k].hits), (u32)CMP_MAP_H);
+          MIN((u32)(cmp_map->headers[k].hits), (u32)CMP_MAP_H);
 
     } else {
 
       afl->stage_max +=
-          MIN((u32)(afl->shm.cmp_map->headers[k].hits), (u32)CMP_MAP_RTN_H);
+          MIN((u32)(cmp_map->headers[k].hits), (u32)CMP_MAP_RTN_H);
 
     }
 
   }
+  
+  qsort_r(sorted_cmps, sorted_cmps_len, sizeof(u16), compare_cmp_cnt, &cmp_map);
 
-  for (k = 0; k < CMP_MAP_W; ++k) {
+  u32 i;
+  for (i = 0; i < sorted_cmps_len; ++i) {
 
-    if (!afl->shm.cmp_map->headers[k].hits) { continue; }
+    k = sorted_cmps[i];
 
-    if (afl->shm.cmp_map->headers[k].type == CMP_TYPE_INS) {
+    if (!cmp_map->headers[k].hits) continue;
 
-      if (unlikely(cmp_fuzz(afl, k, orig_buf, buf, len))) { goto exit_its; }
+    u8 must_skip = !afl->shm.cmp_map->headers[k].hits && cmp_map->headers[k].hits;
 
-    } else {
+    if (cmp_map->headers[k].type == CMP_TYPE_INS) {
 
-      if (unlikely(rtn_fuzz(afl, k, orig_buf, buf, len))) { goto exit_its; }
+      if (unlikely(cmp_fuzz(afl, k, orig_buf, buf, len, must_skip)))
+        goto exit_its;
+
+    } else if (!must_skip) { // TODO weizz for subroutines
+
+      if (unlikely(rtn_fuzz(afl, k, orig_buf, buf, len)))
+        goto exit_its;
 
     }
 
@@ -906,6 +946,8 @@ exit_its:
   new_hit_cnt = afl->queued_paths + afl->unique_crashes;
   afl->stage_finds[STAGE_ITS] += new_hit_cnt - orig_hit_cnt;
   afl->stage_cycles[STAGE_ITS] += afl->fsrv.total_execs - orig_execs;
+  
+  if (cmp_map) ck_free(cmp_map);
 
   memcpy(orig_buf, buf, len);
 
