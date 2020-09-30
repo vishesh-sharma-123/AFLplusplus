@@ -368,6 +368,15 @@ struct afl_pass_stat {
 
 };
 
+struct afl_cmp_tag {
+
+  u32 cnt;
+  u16 id;
+  u16 parent_id;
+  //u8 shape;
+
+} __attribute__((packed));
+
 struct foreign_sync {
 
   u8 *   dir;
@@ -609,6 +618,9 @@ typedef struct afl_state {
 
   struct afl_pass_stat *pass_stats;
   struct cmp_map *      orig_cmp_map;
+  
+  u16 parent_cmp_id;
+  u8 fmtrev_enabled;
 
   u8 describe_op_buf_256[256]; /* describe_op will use this to return a string
                                   up to 256 */

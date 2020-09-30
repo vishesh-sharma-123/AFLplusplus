@@ -317,7 +317,7 @@ static int strntoull(const char *str, size_t sz, char **end, int base,
 static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
                               u64 pattern, u64 repl, u64 o_pattern, u32 idx,
                               u8 *orig_buf, u8 *buf, u32 len, u8 do_reverse,
-                              u8 *status) {
+                              u8 *status, struct afl_cmp_tag* tags, u16 parent_cmp_id, u8 must_skip) {
 
   if (!buf) { FATAL("BUG: buf was NULL. Please report this.\n"); }
 
@@ -337,8 +337,10 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
   u8                 use_num = 0, use_unum = 0;
   unsigned long long unum;
   long long          num;
+  
+  u8 is_ascii = afl->queue_cur->is_ascii;
 
-  if (afl->queue_cur->is_ascii) {
+  if (is_ascii) {
 
     endptr = buf_8;
     if (strntoll(buf_8, len - idx, (char **)&endptr, 0, &num)) {
@@ -382,22 +384,50 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   }
 
-  if (SHAPE_BYTES(h->shape) >= 8 && *status != 1) {
+#define TAG_ASSIGN(idx) \
+  if (tags[idx].cnt == 0) { \
+    tags[idx].cnt = h->cnt; \
+    tags[idx].id = h->id; \
+    tags[idx].parent_id = parent_cmp_id; \
+  }
+
+  if (SHAPE_BYTES(h->shape) >= 8) {
 
     if (its_len >= 8 && *buf_64 == pattern && *o_buf_64 == o_pattern) {
 
-      *buf_64 = repl;
-      if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-      *buf_64 = pattern;
+      if (afl->fmtrev_enabled && !is_ascii) {
+      
+        // TODO verify real correspondence executin the cmplog binary with a bitflip
+      
+        TAG_ASSIGN(idx)
+        TAG_ASSIGN(idx +1)
+        TAG_ASSIGN(idx +2)
+        TAG_ASSIGN(idx +3)
+        TAG_ASSIGN(idx +4)
+        TAG_ASSIGN(idx +5)
+        TAG_ASSIGN(idx +6)
+        TAG_ASSIGN(idx +7)
+
+        afl->parent_cmp_id = h->id;
+      
+      }
+
+      if (!must_skip && *status != 1) {
+
+        *buf_64 = repl;
+        if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
+        *buf_64 = pattern;
+        
+      }
 
     }
 
     // reverse encoding
-    if (do_reverse && *status != 1) {
+    if (do_reverse) {
 
       if (unlikely(cmp_extend_encoding(afl, h, SWAP64(pattern), SWAP64(repl),
                                        SWAP64(o_pattern), idx, orig_buf, buf,
-                                       len, 0, status))) {
+                                       len, 0, status, tags, parent_cmp_id, must_skip))) {
 
         return 1;
 
@@ -407,23 +437,40 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   }
 
-  if (SHAPE_BYTES(h->shape) >= 4 && *status != 1) {
+  if (SHAPE_BYTES(h->shape) >= 4) {
 
     if (its_len >= 4 && *buf_32 == (u32)pattern &&
         *o_buf_32 == (u32)o_pattern) {
 
-      *buf_32 = (u32)repl;
-      if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-      *buf_32 = pattern;
+      if (afl->fmtrev_enabled && !is_ascii) {
+      
+        // TODO verify real correspondence executin the cmplog binary with a bitflip
+      
+        TAG_ASSIGN(idx)
+        TAG_ASSIGN(idx +1)
+        TAG_ASSIGN(idx +2)
+        TAG_ASSIGN(idx +3)
+
+        afl->parent_cmp_id = h->id;
+      
+      }
+
+      if (!must_skip && *status != 1) {
+
+        *buf_32 = (u32)repl;
+        if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
+        *buf_32 = pattern;
+
+      }
 
     }
 
     // reverse encoding
-    if (do_reverse && *status != 1) {
+    if (do_reverse) {
 
       if (unlikely(cmp_extend_encoding(afl, h, SWAP32(pattern), SWAP32(repl),
                                        SWAP32(o_pattern), idx, orig_buf, buf,
-                                       len, 0, status))) {
+                                       len, 0, status, tags, parent_cmp_id, must_skip))) {
 
         return 1;
 
@@ -433,23 +480,38 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   }
 
-  if (SHAPE_BYTES(h->shape) >= 2 && *status != 1) {
+  if (SHAPE_BYTES(h->shape) >= 2) {
 
     if (its_len >= 2 && *buf_16 == (u16)pattern &&
         *o_buf_16 == (u16)o_pattern) {
 
-      *buf_16 = (u16)repl;
-      if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-      *buf_16 = (u16)pattern;
+      if (afl->fmtrev_enabled && !is_ascii) {
+      
+        // TODO verify real correspondence executin the cmplog binary with a bitflip
+      
+        TAG_ASSIGN(idx)
+        TAG_ASSIGN(idx +1)
+
+        afl->parent_cmp_id = h->id;
+      
+      }
+
+      if (!must_skip && *status != 1) {
+
+        *buf_16 = (u16)repl;
+        if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
+        *buf_16 = (u16)pattern;
+
+      }
 
     }
 
     // reverse encoding
-    if (do_reverse && *status != 1) {
+    if (do_reverse) {
 
       if (unlikely(cmp_extend_encoding(afl, h, SWAP16(pattern), SWAP16(repl),
                                        SWAP16(o_pattern), idx, orig_buf, buf,
-                                       len, 0, status))) {
+                                       len, 0, status, tags, parent_cmp_id, must_skip))) {
 
         return 1;
 
@@ -459,17 +521,33 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   }
 
-  if (SHAPE_BYTES(h->shape) >= 1 && *status != 1) {
+  if (SHAPE_BYTES(h->shape) >= 1) {
 
     if (its_len >= 1 && *buf_8 == (u8)pattern && *o_buf_8 == (u8)o_pattern) {
 
-      *buf_8 = (u8)repl;
-      if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-      *buf_8 = (u8)pattern;
+      if (afl->fmtrev_enabled && !is_ascii) {
+      
+        // TODO verify real correspondence executin the cmplog binary with a bitflip
+      
+        TAG_ASSIGN(idx)
+
+        afl->parent_cmp_id = h->id;
+      
+      }
+
+      if (!must_skip && *status != 1) {
+
+        *buf_8 = (u8)repl;
+        if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
+        *buf_8 = (u8)pattern;
+        
+      }
 
     }
 
   }
+
+#undef TAG_ASSIGN
 
   return 0;
 
@@ -525,9 +603,9 @@ static void try_to_add_to_dict(afl_state_t *afl, u64 v, u8 shape) {
 
 }
 
-static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len, u8 must_skip) {
+static u8 cmp_fuzz(afl_state_t *afl, struct cmp_map* cmp_map, u32 key, u8 *orig_buf, u8 *buf, u32 len, struct afl_cmp_tag* tags, u8 must_skip) {
 
-  struct cmp_header *h = &afl->shm.cmp_map->headers[key];
+  struct cmp_header *h = &cmp_map->headers[key];
   u32                i, j, idx;
 
   u32 loggeds = h->hits;
@@ -545,11 +623,13 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len, u8
   u8  s_v0_inc = 1, s_v1_inc = 1;
   u8  s_v0_dec = 1, s_v1_dec = 1;
 
+  u16 parent_cmp_id = afl->parent_cmp_id;
+
   for (i = 0; i < loggeds; ++i) {
 
     fails = 0;
 
-    struct cmp_operands *o = &afl->shm.cmp_map->log[key][i];
+    struct cmp_operands *o = &cmp_map->log[key][i];
 
     // loop detection code
     if (i == 0) {
@@ -575,20 +655,19 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len, u8
     // opt not in the paper
     for (j = 0; j < i; ++j) {
 
-      if (afl->shm.cmp_map->log[key][j].v0 == o->v0 &&
-          afl->shm.cmp_map->log[key][i].v1 == o->v1) {
+      if (cmp_map->log[key][j].v0 == o->v0 &&
+          cmp_map->log[key][i].v1 == o->v1) {
 
         goto cmp_fuzz_next_iter;
 
       }
 
     }
-
+    
     for (idx = 0; idx < len && fails < 8; ++idx) {
 
       status = 0;
-      if (unlikely(cmp_extend_encoding(afl, h, o->v0, o->v1, orig_o->v0, idx,
-                                       orig_buf, buf, len, 1, &status))) {
+      if (unlikely(cmp_extend_encoding(afl, h, o->v0, o->v1, orig_o->v0, idx, orig_buf, buf, len, 1, &status, tags, parent_cmp_id, must_skip))) {
 
         return 1;
 
@@ -605,8 +684,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len, u8
       }
 
       status = 0;
-      if (unlikely(cmp_extend_encoding(afl, h, o->v1, o->v0, orig_o->v1, idx,
-                                       orig_buf, buf, len, 1, &status))) {
+      if (unlikely(cmp_extend_encoding(afl, h, o->v1, o->v0, orig_o->v1, idx, orig_buf, buf, len, 1, &status, tags, parent_cmp_id, must_skip))) {
 
         return 1;
 
@@ -624,7 +702,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len, u8
 
     }
 
-    if (status == 1) { found_one = 1; }
+    if (status == 1) found_one = 1;
     if (fails) failed_once = 1;
 
     // If failed, add to dictionary
@@ -651,19 +729,23 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len, u8
 
   }
 
-  if (!found_one && afl->pass_stats[key].faileds < 0xff) {
+  if (!must_skip) {
 
-    afl->pass_stats[key].faileds++;
+    if (!found_one && afl->pass_stats[key].faileds < 0xff) {
 
-  }
+      afl->pass_stats[key].faileds++;
+
+    }
+    
+    if (!found_one && !failed_once && afl->pass_stats[key].not_i2s < 0xff) {
+
+      afl->pass_stats[key].not_i2s++;
+
+    }
+
+    if (afl->pass_stats[key].total < 0xff) { afl->pass_stats[key].total++; }
   
-  if (!found_one && !failed_once && afl->pass_stats[key].not_i2s < 0xff) {
-
-    afl->pass_stats[key].not_i2s++;
-
   }
-
-  if (afl->pass_stats[key].total < 0xff) { afl->pass_stats[key].total++; }
 
   return 0;
 
@@ -701,9 +783,9 @@ static u8 rtn_extend_encoding(afl_state_t *afl, u8 *pattern, u8 *repl,
 
 }
 
-static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len) {
+static u8 rtn_fuzz(afl_state_t *afl, struct cmp_map* cmp_map, u32 key, u8 *orig_buf, u8 *buf, u32 len) {
 
-  struct cmp_header *h = &afl->shm.cmp_map->headers[key];
+  struct cmp_header *h = &cmp_map->headers[key];
   u32                i, j, idx;
 
   u32 loggeds = h->hits;
@@ -719,7 +801,7 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len) {
     fails = 0;
 
     struct cmpfn_operands *o =
-        &((struct cmpfn_operands *)afl->shm.cmp_map->log[key])[i];
+        &((struct cmpfn_operands *)cmp_map->log[key])[i];
 
     struct cmpfn_operands *orig_o =
         &((struct cmpfn_operands *)afl->orig_cmp_map->log[key])[i];
@@ -727,7 +809,7 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len) {
     // opt not in the paper
     for (j = 0; j < i; ++j) {
 
-      if (!memcmp(&((struct cmpfn_operands *)afl->shm.cmp_map->log[key])[j], o,
+      if (!memcmp(&((struct cmpfn_operands *)cmp_map->log[key])[j], o,
                   sizeof(struct cmpfn_operands))) {
 
         goto rtn_fuzz_next_iter;
@@ -842,6 +924,8 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
 
   u8 r = 1;
   struct cmp_map* cmp_map = NULL;
+  
+  struct afl_cmp_tag* tags = ck_alloc(sizeof(struct afl_cmp_tag) * len);
 
   if (afl->orig_cmp_map == NULL) {
 
@@ -871,7 +955,7 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
   
   cmp_map = ck_alloc_nozero(sizeof(struct cmp_map));
   memcpy(cmp_map, afl->shm.cmp_map, sizeof(struct cmp_map));
-
+  
   u64 orig_hit_cnt, new_hit_cnt;
   u64 orig_execs = afl->fsrv.total_execs;
   orig_hit_cnt = afl->queued_paths + afl->unique_crashes;
@@ -928,12 +1012,12 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
 
     if (cmp_map->headers[k].type == CMP_TYPE_INS) {
 
-      if (unlikely(cmp_fuzz(afl, k, orig_buf, buf, len, must_skip)))
+      if (unlikely(cmp_fuzz(afl, cmp_map, k, orig_buf, buf, len, tags, must_skip)))
         goto exit_its;
 
     } else if (!must_skip) { // TODO weizz for subroutines
 
-      if (unlikely(rtn_fuzz(afl, k, orig_buf, buf, len)))
+      if (unlikely(rtn_fuzz(afl, cmp_map, k, orig_buf, buf, len)))
         goto exit_its;
 
     }
@@ -950,6 +1034,8 @@ exit_its:
   if (cmp_map) ck_free(cmp_map);
 
   memcpy(orig_buf, buf, len);
+  
+  if (r) ck_free(tags);
 
   return r;
 
