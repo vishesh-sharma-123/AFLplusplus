@@ -245,18 +245,25 @@ checksum_fail:
 
 static u8 its_fuzz(afl_state_t *afl, u8 *buf, u32 len, u8 *status) {
 
-  u64 orig_hit_cnt, new_hit_cnt;
+  u64 orig_hit_cnt, new_hit_cnt, orig_queued;
 
   orig_hit_cnt = afl->queued_paths + afl->unique_crashes;
+  orig_queued = afl->queued_paths;
 
   if (unlikely(common_fuzz_stuff(afl, buf, len))) { return 1; }
+
+  if (afl->fmtrev_enabled && orig_queued != afl->queued_paths) {
+  
+    afl->queue_top->weizz_tags = afl->queue_cur->weizz_tags;
+  
+  }
 
   new_hit_cnt = afl->queued_paths + afl->unique_crashes;
 
   if (unlikely(new_hit_cnt != orig_hit_cnt)) {
 
     *status = 1;
-
+    
   } else {
 
     *status = 2;
@@ -1045,6 +1052,7 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
   if (afl->fmtrev_enabled) {
 
     tags = ck_alloc(sizeof(struct afl_cmp_tag) * len);
+    afl->queue_cur->weizz_tags = tags;
     
     cmp_map = ck_alloc_nozero(sizeof(struct cmp_map));
     memcpy(cmp_map, afl->shm.cmp_map, sizeof(struct cmp_map));
@@ -1145,8 +1153,18 @@ exit_its:
   
     if (cmp_map) ck_free(cmp_map);
     
-    if (r) ck_free(tags);
-    else afl->queue_cur->weizz_tags = tags;
+    if (r) {
+    
+      struct queue_entry* q = afl->queue;
+      while (q) {
+        if (q->weizz_tags == tags)
+          q->weizz_tags = NULL;
+        q = q->next;
+      }
+      
+      ck_free(tags);
+      
+    }
 
   }
 
