@@ -1905,6 +1905,7 @@ havoc_stage:
     afl->stage_cur_val = use_stacking;
 
     u8 tags_changed_structure = 0;
+    u8 havoc_changed_structure = 0;
 
     for (i = 0; i < use_stacking; ++i) {
 
@@ -1927,6 +1928,8 @@ havoc_stage:
             if (likely(new_len > 0 && custom_havoc_buf)) {
 
               temp_len = new_len;
+              havoc_changed_structure = 1;
+
               if (out_buf != custom_havoc_buf) {
 
                 afl_realloc(AFL_BUF_PARAM(out), temp_len);
@@ -1943,11 +1946,17 @@ havoc_stage:
 
       }
       
-      if (tags && rand_below(afl, 15) == 0) { // TODO tune probability
+      if (tags && !havoc_changed_structure && rand_below(afl, 15) == 0) { // TODO tune probability
       
-        tags_changed_structure = weizz_mutation(afl, tags, &fields_cnt, out_buf, &temp_len);
-        continue;
-      
+        u8 applied = weizz_mutation(afl, tags, &fields_cnt, out_buf, &temp_len);
+        tags_changed_structure |= applied;
+
+        if (applied) {
+          out_buf = afl->out_buf;
+          tags = afl->tags_buf;
+          continue;
+        }
+        
       }
 
       switch ((r = rand_below(afl, r_max))) {
@@ -2202,6 +2211,8 @@ havoc_stage:
             memcpy(new_buf + clone_to + clone_len, out_buf + clone_to,
                    temp_len - clone_to);
 
+            havoc_changed_structure = 1;
+
             afl_swap_bufs(AFL_BUF_PARAM(out), AFL_BUF_PARAM(out_scratch));
             out_buf = new_buf;
             new_buf = NULL;
@@ -2326,6 +2337,8 @@ havoc_stage:
 
               /* Inserted part */
               memcpy(out_buf + insert_at, ptr, extra_len);
+              
+              havoc_changed_structure = 1;
 
               temp_len += extra_len;
 
@@ -2429,6 +2442,8 @@ havoc_stage:
               /* Tail */
               memcpy(temp_buf + clone_to + clone_len, out_buf + clone_to,
                      temp_len - clone_to);
+
+              havoc_changed_structure = 1;
 
               afl_swap_bufs(AFL_BUF_PARAM(out), AFL_BUF_PARAM(out_scratch));
               out_buf = temp_buf;

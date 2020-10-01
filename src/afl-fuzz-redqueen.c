@@ -397,11 +397,11 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_map* cmp_map, u32 key
 
       if (afl->fmtrev_enabled && !is_ascii && tags[idx].cnt != h->cnt) {
 
-        u8 tries = 0;
+//        u8 tries = 0;
 
-retry_flip_cmp64:
+//retry_flip_cmp64:
         /* Randomly flip a bit in the pattern */
-        buf_8[rand_below(afl, 8)] ^= (128 >> (rand_below(afl, 8*8) & 7));
+        /*buf_8[rand_below(afl, 8)] ^= (128 >> (rand_below(afl, 8*8) & 7));
       
         memset(&afl->shm.cmp_map->headers[key], 0, sizeof(struct cmp_header));
         if (unlikely(common_fuzz_cmplog_stuff(afl, buf, len))) { return 1; }
@@ -410,7 +410,7 @@ retry_flip_cmp64:
         if (do_reverse) mod_op = *buf_64;
         else mod_op = SWAP64(*buf_64);
         
-        if (afl->shm.cmp_map->headers[key].hits > log_i && ((afl->shm.cmp_map->log[key][log_i].v0 == mod_op && afl->shm.cmp_map->log[key][log_i].v1 == cmp_map->log[key][log_i].v1) || (afl->shm.cmp_map->log[key][log_i].v0 == cmp_map->log[key][log_i].v0 && afl->shm.cmp_map->log[key][log_i].v1 == mod_op))) {
+        if (afl->shm.cmp_map->headers[key].hits > log_i && ((afl->shm.cmp_map->log[key][log_i].v0 == mod_op && afl->shm.cmp_map->log[key][log_i].v1 == cmp_map->log[key][log_i].v1) || (afl->shm.cmp_map->log[key][log_i].v0 == cmp_map->log[key][log_i].v0 && afl->shm.cmp_map->log[key][log_i].v1 == mod_op))) {*/
         
           TAG_ASSIGN(idx, 7)
           TAG_ASSIGN(idx +1, 7)
@@ -423,7 +423,7 @@ retry_flip_cmp64:
 
           afl->parent_cmp_id = h->id;
           
-        } else {
+        /*} else {
         
           *buf_64 = pattern;
           
@@ -432,7 +432,7 @@ retry_flip_cmp64:
         
         }
         
-        *buf_64 = pattern;
+        *buf_64 = pattern;*/
       
       }
 
@@ -466,11 +466,11 @@ retry_flip_cmp64:
 
       if (afl->fmtrev_enabled && !is_ascii && tags[idx].cnt != h->cnt) {
 
-        u8 tries = 0;
+ //       u8 tries = 0;
 
-retry_flip_cmp32:
+//retry_flip_cmp32:
         /* Randomly flip a bit in the pattern */
-        buf_8[rand_below(afl, 4)] ^= (128 >> (rand_below(afl, 4*8) & 7));
+        /*buf_8[rand_below(afl, 4)] ^= (128 >> (rand_below(afl, 4*8) & 7));
         
         memset(&afl->shm.cmp_map->headers[key], 0, sizeof(struct cmp_header));
         if (unlikely(common_fuzz_cmplog_stuff(afl, buf, len))) { return 1; }
@@ -479,7 +479,7 @@ retry_flip_cmp32:
         if (do_reverse) mod_op = *buf_32;
         else mod_op = SWAP32(*buf_32);
         
-        if (afl->shm.cmp_map->headers[key].hits > log_i && (((u32)afl->shm.cmp_map->log[key][log_i].v0 == mod_op && (u32)afl->shm.cmp_map->log[key][log_i].v1 == (u32)cmp_map->log[key][log_i].v1) || ((u32)afl->shm.cmp_map->log[key][log_i].v0 == (u32)cmp_map->log[key][log_i].v0 && (u32)afl->shm.cmp_map->log[key][log_i].v1 == mod_op))) {
+        if (afl->shm.cmp_map->headers[key].hits > log_i && (((u32)afl->shm.cmp_map->log[key][log_i].v0 == mod_op && (u32)afl->shm.cmp_map->log[key][log_i].v1 == (u32)cmp_map->log[key][log_i].v1) || ((u32)afl->shm.cmp_map->log[key][log_i].v0 == (u32)cmp_map->log[key][log_i].v0 && (u32)afl->shm.cmp_map->log[key][log_i].v1 == mod_op))) {*/
         
           TAG_ASSIGN(idx, 3)
           TAG_ASSIGN(idx +1, 3)
@@ -488,7 +488,7 @@ retry_flip_cmp32:
 
           afl->parent_cmp_id = h->id;
           
-        } else {
+        /*} else {
         
           *buf_32 = (u32)pattern;
           
@@ -497,7 +497,7 @@ retry_flip_cmp32:
         
         }
         
-        *buf_32 = (u32)pattern;
+        *buf_32 = (u32)pattern;*/
       
       }
 
@@ -531,11 +531,11 @@ retry_flip_cmp32:
 
       if (afl->fmtrev_enabled && !is_ascii && tags[idx].cnt != h->cnt) {
       
-        u8 tries = 0;
+ //       u8 tries = 0;
 
-retry_flip_cmp16:
+//retry_flip_cmp16:
         /* Randomly flip a bit in the pattern */
-        buf_8[rand_below(afl, 2)] ^= (128 >> (rand_below(afl, 2*8) & 7));
+        /*buf_8[rand_below(afl, 2)] ^= (128 >> (rand_below(afl, 2*8) & 7));
       
         memset(&afl->shm.cmp_map->headers[key], 0, sizeof(struct cmp_header));
         if (unlikely(common_fuzz_cmplog_stuff(afl, buf, len))) { return 1; }
@@ -544,14 +544,14 @@ retry_flip_cmp16:
         if (do_reverse) mod_op = *buf_16;
         else mod_op = SWAP16(*buf_16);
         
-        if (afl->shm.cmp_map->headers[key].hits > log_i && (((u16)afl->shm.cmp_map->log[key][log_i].v0 == mod_op && (u16)afl->shm.cmp_map->log[key][log_i].v1 == (u16)cmp_map->log[key][log_i].v1) || ((u16)afl->shm.cmp_map->log[key][log_i].v0 == (u16)cmp_map->log[key][log_i].v0 && (u16)afl->shm.cmp_map->log[key][log_i].v1 == mod_op))) {
+        if (afl->shm.cmp_map->headers[key].hits > log_i && (((u16)afl->shm.cmp_map->log[key][log_i].v0 == mod_op && (u16)afl->shm.cmp_map->log[key][log_i].v1 == (u16)cmp_map->log[key][log_i].v1) || ((u16)afl->shm.cmp_map->log[key][log_i].v0 == (u16)cmp_map->log[key][log_i].v0 && (u16)afl->shm.cmp_map->log[key][log_i].v1 == mod_op))) {*/
         
           TAG_ASSIGN(idx, 1)
           TAG_ASSIGN(idx +1, 1)
 
           afl->parent_cmp_id = h->id;
           
-        } else {
+        /*} else {
         
           *buf_16 = (u16)pattern;
           
@@ -560,7 +560,7 @@ retry_flip_cmp16:
         
         }
         
-        *buf_16 = (u16)pattern;
+        *buf_16 = (u16)pattern;*/
       
       }
 
@@ -597,18 +597,18 @@ retry_flip_cmp16:
 
 //retry_flip_cmp8:
         /* Randomly flip a bit in the pattern */
-        buf_8[0] ^= (128 >> (rand_below(afl, 8) & 7));
+        /*buf_8[0] ^= (128 >> (rand_below(afl, 8) & 7));
       
         memset(&afl->shm.cmp_map->headers[key], 0, sizeof(struct cmp_header));
         if (unlikely(common_fuzz_cmplog_stuff(afl, buf, len))) { return 1; }
         
-        if (afl->shm.cmp_map->headers[key].hits > log_i && (((u8)afl->shm.cmp_map->log[key][log_i].v0 == *buf_8 && (u8)afl->shm.cmp_map->log[key][log_i].v1 == (u8)cmp_map->log[key][log_i].v1) || ((u8)afl->shm.cmp_map->log[key][log_i].v0 == (u8)cmp_map->log[key][log_i].v0 && (u8)afl->shm.cmp_map->log[key][log_i].v1 == *buf_8))) {
+        if (afl->shm.cmp_map->headers[key].hits > log_i && (((u8)afl->shm.cmp_map->log[key][log_i].v0 == *buf_8 && (u8)afl->shm.cmp_map->log[key][log_i].v1 == (u8)cmp_map->log[key][log_i].v1) || ((u8)afl->shm.cmp_map->log[key][log_i].v0 == (u8)cmp_map->log[key][log_i].v0 && (u8)afl->shm.cmp_map->log[key][log_i].v1 == *buf_8))) {*/
         
           TAG_ASSIGN(idx, 0)
 
           afl->parent_cmp_id = h->id;
           
-        } /*else {
+        /*} else {
         
           *buf_8 = (u8)pattern;
           
@@ -617,7 +617,7 @@ retry_flip_cmp16:
         
         }*/
         
-        *buf_8 = (u8)pattern;
+        //*buf_8 = (u8)pattern;
       
       }
 
@@ -1128,13 +1128,13 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
 
   r = 0;
 
-  if (afl->fmtrev_enabled) {
+  /*if (afl->fmtrev_enabled) {
     // debgug print tags
     for (i = 0; i < len; ++i) {
       fprintf(stderr, "'%c' %x\t[id: %d cnt: %d shape: %d parent: %d]\n", buf[i], buf[i], tags[i].id, tags[i].cnt, SHAPE_BYTES(tags[i].shape), tags[i].parent_id);
     }
     fprintf(stderr, "=====================\n");
-  }
+  }*/
 
 exit_its:
   new_hit_cnt = afl->queued_paths + afl->unique_crashes;
