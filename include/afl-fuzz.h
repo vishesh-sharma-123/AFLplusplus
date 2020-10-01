@@ -134,6 +134,15 @@ extern s16 interesting_16[INTERESTING_8_LEN + INTERESTING_16_LEN];
 extern s32
     interesting_32[INTERESTING_8_LEN + INTERESTING_16_LEN + INTERESTING_32_LEN];
 
+struct afl_cmp_tag {
+
+  u32 cnt;
+  u16 id;
+  u16 parent_id;
+  u8 shape;
+
+} __attribute__((packed));
+
 struct queue_entry {
 
   u8 *fname;                            /* File name for the test case      */
@@ -161,6 +170,8 @@ struct queue_entry {
 
   u8 *trace_mini;                       /* Trace bytes, if kept             */
   u32 tc_ref;                           /* Trace bytes ref count            */
+
+  struct afl_cmp_tag* weizz_tags;
 
   struct queue_entry *next;             /* Next element, if any             */
 
@@ -367,15 +378,6 @@ struct afl_pass_stat {
   u8 not_i2s;
 
 };
-
-struct afl_cmp_tag {
-
-  u32 cnt;
-  u16 id;
-  u16 parent_id;
-  u8 shape;
-
-} __attribute__((packed));
 
 struct foreign_sync {
 
