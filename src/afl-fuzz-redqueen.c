@@ -1131,7 +1131,7 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
   if (afl->fmtrev_enabled) {
     // debgug print tags
     for (i = 0; i < len; ++i) {
-      fprintf(stderr, "'%c' %x [%d %d %d]\n", buf[i], buf[i], tags[i].id, tags[i].cnt, SHAPE_BYTES(tags[i].shape));
+      fprintf(stderr, "'%c' %x\t[id: %d cnt: %d shape: %d parent: %d]\n", buf[i], buf[i], tags[i].id, tags[i].cnt, SHAPE_BYTES(tags[i].shape), tags[i].parent_id);
     }
     fprintf(stderr, "=====================\n");
   }

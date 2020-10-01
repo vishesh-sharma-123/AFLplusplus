@@ -666,6 +666,8 @@ typedef struct afl_state {
   u8 *in_buf;
 
   u8 *in_scratch_buf;
+  
+  struct afl_cmp_tag *tags_buf;
 
   u8 *ex_buf;
   u32 custom_mutators_count;
@@ -1019,12 +1021,15 @@ void   save_cmdline(afl_state_t *, u32, char **);
 void   read_foreign_testcases(afl_state_t *, int);
 
 /* CmpLog */
-
 u8 common_fuzz_cmplog_stuff(afl_state_t *afl, u8 *out_buf, u32 len);
 
 /* RedQueen */
 u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
                         u64 exec_cksum);
+
+/* Weizz */
+u8 weizz_mutation(afl_state_t *afl, struct afl_cmp_tag* tags, u32* fields_cnt, u8 *buf, u32* temp_len);
+u32 weizz_count_fields(struct afl_cmp_tag* tags, u32 len);
 
 /* xoshiro256** */
 uint64_t rand_next(afl_state_t *afl);
