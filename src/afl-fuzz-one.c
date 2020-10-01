@@ -1815,12 +1815,28 @@ havoc_stage:
   /* The havoc stage mutation code is also invoked when splicing files; if the
      splice_cycle variable is set, generate different descriptions and such. */
 
+  struct afl_cmp_tag* tags = NULL;
+  u32 fields_cnt = 0, orig_fields_cnt = 0;
+
   if (!splice_cycle) {
 
     afl->stage_name = "havoc";
     afl->stage_short = "havoc";
     afl->stage_max = (doing_det ? HAVOC_CYCLES_INIT : HAVOC_CYCLES) *
                      perf_score / afl->havoc_div / 100;
+   
+    if (afl->fmtrev_enabled && afl->queue_cur->weizz_tags) {
+    
+      /* Inizialize vars for Weizz */
+    
+      tags = afl_realloc(AFL_BUF_PARAM(tags), len * sizeof(struct afl_cmp_tag));
+      if (unlikely(!tags)) { PFATAL("alloc"); }
+      
+      memcpy(tags, afl->queue_cur->weizz_tags, len * sizeof(struct afl_cmp_tag));
+    
+      orig_fields_cnt = fields_cnt = weizz_count_fields(tags, len);
+    
+    }
 
   } else {
 
@@ -1888,6 +1904,8 @@ havoc_stage:
 
     afl->stage_cur_val = use_stacking;
 
+    u8 tags_changed_structure = 0;
+
     for (i = 0; i < use_stacking; ++i) {
 
       if (afl->custom_mutators_count) {
@@ -1923,6 +1941,13 @@ havoc_stage:
 
         });
 
+      }
+      
+      if (tags && rand_below(afl, 15) == 0) { // TODO tune probability
+      
+        tags_changed_structure = weizz_mutation(afl, tags, &fields_cnt, out_buf, &temp_len);
+        continue;
+      
       }
 
       switch ((r = rand_below(afl, r_max))) {
@@ -2430,6 +2455,17 @@ havoc_stage:
     if (unlikely(!out_buf)) { PFATAL("alloc"); }
     temp_len = len;
     memcpy(out_buf, in_buf, len);
+    
+    if (tags_changed_structure && tags) {
+    
+      tags = afl_realloc(AFL_BUF_PARAM(tags), len * sizeof(struct afl_cmp_tag));
+      if (unlikely(!tags)) { PFATAL("alloc"); }
+      
+      memcpy(tags, afl->queue_cur->weizz_tags, len * sizeof(struct afl_cmp_tag));
+    
+      fields_cnt = orig_fields_cnt;
+    
+    }
 
     /* If we're finding new stuff, let's run for a bit longer, limits
        permitting. */
