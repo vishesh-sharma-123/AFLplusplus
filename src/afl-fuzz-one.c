@@ -382,6 +382,8 @@ u8 fuzz_one_original(afl_state_t *afl) {
   u8  a_collect[MAX_AUTO_EXTRA];
   u32 a_len = 0;
 
+  u64 fuzz_one_start_time = get_cur_time();
+
 #ifdef IGNORE_FINDS
 
   /* In IGNORE_FINDS mode, skip any entries that weren't in the
@@ -522,8 +524,10 @@ u8 fuzz_one_original(afl_state_t *afl) {
    * TRIMMING *
    ************/
 
+trimming_stage:
+
   if (unlikely(!afl->non_instrumented_mode && !afl->queue_cur->trim_done &&
-               !afl->disable_trim)) {
+               !afl->disable_trim && !afl->queue_cur->weizz_tags)) {
 
     u8 res = trim_case(afl, afl->queue_cur, in_buf);
 
@@ -550,15 +554,35 @@ u8 fuzz_one_original(afl_state_t *afl) {
 
   memcpy(out_buf, in_buf, len);
 
-  /*********************
-   * PERFORMANCE SCORE *
-   *********************/
-
-  orig_perf = perf_score = calculate_score(afl, afl->queue_cur);
-
-  if (unlikely(perf_score == 0)) { goto abandon_entry; }
+  /*******************
+   * INPUT TO STATE  *
+   *******************/
 
   if (unlikely(afl->shm.cmplog_mode && !afl->queue_cur->fully_colorized)) {
+
+    u8 has_tags = !!afl->queue_cur->weizz_tags;
+    
+    // TODO free tags using a refcount
+    if (has_tags) {
+    
+      u8 must_free = 1;
+      
+      struct queue_entry* q = afl->queue;
+      while (q) {
+        if (q != afl->queue_cur && q->weizz_tags == afl->queue_cur->weizz_tags)
+          must_free = 0;
+        q = q->next;
+      }
+      
+      if (must_free)
+        ck_free(afl->queue_cur->weizz_tags);
+
+      afl->queue_cur->weizz_tags = NULL;
+    
+    }
+
+    if (!afl->queue_cur->trim_done && !afl->disable_trim && has_tags)
+      goto trimming_stage;
 
     if (input_to_state_stage(afl, in_buf, out_buf, len,
                              afl->queue_cur->exec_cksum)) {
@@ -568,6 +592,14 @@ u8 fuzz_one_original(afl_state_t *afl) {
     }
 
   }
+
+  /*********************
+   * PERFORMANCE SCORE *
+   *********************/
+
+  orig_perf = perf_score = calculate_score(afl, afl->queue_cur);
+
+  if (unlikely(perf_score == 0)) { goto abandon_entry; }
 
   /* Skip right away if -d is given, if it has not been chosen sufficiently
      often to warrant the expensive deterministic stage (fuzz_level), or
@@ -2460,8 +2492,17 @@ havoc_stage:
       }
 
     }
+    
+    u64 prev_queued = afl->queued_paths;
 
     if (common_fuzz_stuff(afl, out_buf, temp_len)) { goto abandon_entry; }
+
+    if (tags && afl->queued_paths != prev_queued && !havoc_changed_structure) {
+    
+      afl->queue_top->weizz_tags = ck_alloc_nozero(temp_len * sizeof(struct afl_cmp_tag));
+      memcpy(afl->queue_top->weizz_tags, tags, temp_len * sizeof(struct afl_cmp_tag));
+    
+    }
 
     /* out_buf might have been mangled a bit, so let's restore it to its
        original size and shape. */
