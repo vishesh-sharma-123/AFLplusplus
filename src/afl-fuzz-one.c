@@ -558,7 +558,7 @@ trimming_stage:
    * INPUT TO STATE  *
    *******************/
 
-  if (unlikely(afl->shm.cmplog_mode && !afl->queue_cur->fully_colorized)) {
+  if (unlikely(afl->shm.cmplog_mode && !afl->queue_cur->fully_colorized && rand_below(afl, 100) < (fuzz_one_start_time - afl->last_path_time) / 500)) {
 
     u8 has_tags = !!afl->queue_cur->weizz_tags;
     
