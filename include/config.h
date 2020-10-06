@@ -295,6 +295,9 @@
 
 #define RESEED_RNG 100000
 
+/* Infinite cache size, ignores CACHE_SIZE completely. */
+#define TESTCASE_INF_CACHE 1
+
 /* The amount of entries in the testcase cache, held in memory.
 Decrease if RAM usage is high. */
 #define TESTCASE_CACHE_SIZE 2048

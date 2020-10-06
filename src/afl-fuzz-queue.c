@@ -772,6 +772,10 @@ u32 calculate_score(afl_state_t *afl, struct queue_entry *q) {
 inline void queue_testcase_release(afl_state_t *afl, struct queue_entry *q) {
 
   (void)afl;
+  (void)q;
+
+#if TESTCASE_CACHE_SIZE_INF != 1
+
   if (unlikely(q->testcase_refs == 0)) {
 
     FATAL("Testcase refcount reduced past 0");
@@ -780,6 +784,8 @@ inline void queue_testcase_release(afl_state_t *afl, struct queue_entry *q) {
 
   q->testcase_refs--;
 
+#endif
+
 }
 
 /* Returns the testcase buf from the file behind this queue entry.
@@ -787,6 +793,8 @@ inline void queue_testcase_release(afl_state_t *afl, struct queue_entry *q) {
 u8 *queue_testcase_take(afl_state_t *afl, struct queue_entry *q) {
 
   if (!q->testcase_buf) {
+
+#if TESTCASE_CACHE_SIZE_INF != 1
 
     u32 tid = 0;
     /* Buf not cached, let's do that now */
@@ -813,6 +821,8 @@ u8 *queue_testcase_take(afl_state_t *afl, struct queue_entry *q) {
 
     }
 
+#endif
+
     /* Map the test case into memory. */
 
     int fd = open(q->fname, O_RDONLY);
@@ -831,6 +841,8 @@ u8 *queue_testcase_take(afl_state_t *afl, struct queue_entry *q) {
 
     close(fd);
 
+#if TESTCASE_CACHE_SIZE_INF != 1
+
     /* Register us as cached */
     afl->q_testcase_cache[tid] = q;
 
@@ -838,16 +850,21 @@ u8 *queue_testcase_take(afl_state_t *afl, struct queue_entry *q) {
 
   q->testcase_refs++;
   if (unlikely(!q->testcase_buf || !q->testcase_refs)) {
+
     if (!q->testcase_buf) {
 
       FATAL("Testcase buf is NULL, this should never happen");
 
     }
+
     if (!q->testcase_refs) {
 
       FATAL("Testcase ref overflow. Missing a testcase release somwhere?");
 
     }
+
+#endif
+
   }
 
   return q->testcase_buf;

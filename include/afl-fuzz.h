@@ -163,7 +163,10 @@ struct queue_entry {
   u32 tc_ref;                           /* Trace bytes ref count            */
 
   u8 *testcase_buf;                     /* The testcase buffer, if loaded.  */
+
+#if TESTCASE_CACHE_SIZE_INF != 1
   u32 testcase_refs;                    /* count of users of testcase buf   */
+#endif
 
   struct queue_entry *next;             /* Next element, if any             */
 
@@ -667,11 +670,13 @@ typedef struct afl_state {
   /* queue entries ready for splicing count (len > 4) */
   u32 ready_for_splicing_count;
 
+#if TESTCASE_CACHE_SIZE_INF != 1
   /* How many queue entries currently have cached testcases */
   u32 q_testcase_cache_count;
   /* Refs to each queue entry with cached testcase (for eviction, if cache_count
    * is too large) */
   struct queue_entry *q_testcase_cache[TESTCASE_CACHE_SIZE];
+#endif
 
 } afl_state_t;
 
