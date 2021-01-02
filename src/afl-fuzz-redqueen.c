@@ -99,12 +99,12 @@ static u8 get_exec_checksum(afl_state_t *afl, u8 *buf, u32 len, u64 *cksum) {
 
 }
 
-static void rand_replace(afl_state_t *afl, u8 *buf, u32 len) {
+static void xor_replace(u8 *buf, u32 len) {
 
   u32 i;
   for (i = 0; i < len; ++i) {
 
-    buf[i] = rand_below(afl, 256);
+    buf[i] ^= 0xff;
 
   }
 
@@ -114,8 +114,6 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum) {
 
   struct range *ranges = add_range(NULL, 0, len);
   u8 *          backup = ck_alloc_nozero(len);
-
-  u8 needs_write = 0;
 
   u64 orig_hit_cnt, new_hit_cnt;
   orig_hit_cnt = afl->queued_paths + afl->unique_crashes;
@@ -136,7 +134,7 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum) {
       /* Range not empty */
 
       memcpy(backup, buf + rng->start, s);
-      rand_replace(afl, buf + rng->start, s);
+      xor_replace(buf + rng->start, s);
 
       u64 cksum;
       u64 start_us = get_cur_time_us();
@@ -151,16 +149,12 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum) {
       /* Discard if the mutations change the paths or if it is too decremental
         in speed */
       if (cksum != exec_cksum ||
-          ((stop_us - start_us > 2 * afl->queue_cur->exec_us) &&
+          ((stop_us - start_us > 3 * afl->queue_cur->exec_us) &&
            likely(!afl->fixed_seed))) {
 
         ranges = add_range(ranges, rng->start, rng->start + s / 2);
         ranges = add_range(ranges, rng->start + s / 2 + 1, rng->end);
         memcpy(buf + rng->start, backup, s);
-
-      } else {
-
-        needs_write = 1;
 
       }
 
@@ -178,7 +172,6 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum) {
   afl->stage_finds[STAGE_COLORIZATION] += new_hit_cnt - orig_hit_cnt;
   afl->stage_cycles[STAGE_COLORIZATION] += afl->stage_cur;
   ck_free(backup);
-
   ck_free(rng);
   rng = NULL;
 
@@ -188,32 +181,6 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum) {
     ranges = rng->next;
     ck_free(rng);
     rng = NULL;
-
-  }
-
-  // save the input with the high entropy
-
-  if (needs_write) {
-
-    s32 fd;
-
-    if (afl->no_unlink) {
-
-      fd = open(afl->queue_cur->fname, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-
-    } else {
-
-      unlink(afl->queue_cur->fname);                       /* ignore errors */
-      fd = open(afl->queue_cur->fname, O_WRONLY | O_CREAT | O_EXCL, 0600);
-
-    }
-
-    if (fd < 0) { PFATAL("Unable to create '%s'", afl->queue_cur->fname); }
-
-    ck_write(fd, buf, len, afl->queue_cur->fname);
-    afl->queue_cur->len = len;  // no-op, just to be 100% safe
-
-    close(fd);
 
   }
 
@@ -231,8 +198,6 @@ checksum_fail:
     rng = NULL;
 
   }
-
-  // TODO: clang notices a _potential_ leak of mem pointed to by rng
 
   return 1;
 
@@ -802,13 +767,13 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
                         u64 exec_cksum) {
 
   u8 r = 1;
-  if (afl->orig_cmp_map == NULL) {
+  if (unlikely(!afl->orig_cmp_map)) {
 
     afl->orig_cmp_map = ck_alloc_nozero(sizeof(struct cmp_map));
 
   }
 
-  if (afl->pass_stats == NULL) {
+  if (unlikely(!afl->pass_stats)) {
 
     afl->pass_stats = ck_alloc(sizeof(struct afl_pass_stat) * CMP_MAP_W);
 
