@@ -35,6 +35,8 @@ struct range {
   u32           start;
   u32           end;
   struct range *next;
+  struct range *prev;
+  u8            ok;
 
 };
 
@@ -44,6 +46,8 @@ static struct range *add_range(struct range *ranges, u32 start, u32 end) {
   r->start = start;
   r->end = end;
   r->next = ranges;
+  r->ok = 0;
+  if (likely(ranges)) ranges->prev = r;
   return r;
 
 }
@@ -51,38 +55,25 @@ static struct range *add_range(struct range *ranges, u32 start, u32 end) {
 static struct range *pop_biggest_range(struct range **ranges) {
 
   struct range *r = *ranges;
-  struct range *prev = NULL;
   struct range *rmax = NULL;
-  struct range *prev_rmax = NULL;
   u32           max_size = 0;
 
   while (r) {
 
-    u32 s = r->end - r->start;
-    if (s >= max_size) {
+    if (!r->ok) {
 
-      max_size = s;
-      prev_rmax = prev;
-      rmax = r;
+      u32 s = r->end - r->start;
+
+      if (s >= max_size) {
+
+        max_size = s;
+        rmax = r;
+
+      }
 
     }
 
-    prev = r;
     r = r->next;
-
-  }
-
-  if (rmax) {
-
-    if (prev_rmax) {
-
-      prev_rmax->next = rmax->next;
-
-    } else {
-
-      *ranges = rmax->next;
-
-    }
 
   }
 
@@ -99,7 +90,6 @@ static u8 get_exec_checksum(afl_state_t *afl, u8 *buf, u32 len, u64 *cksum) {
 
 }
 
-
 /* replace everything but stay in the same type */
 static void type_replace(u8 *buf, u32 len) {
 
@@ -109,23 +99,23 @@ static void type_replace(u8 *buf, u32 len) {
     // wont help for UTF or non-latin charsets
     switch (buf[i]) {
 
-      case 'A' ... 'E':
-      case 'a' ... 'e':
+      case 'A' ... 'D':
+      case 'a' ... 'd':
       case '0':
       case '!' ... '*':
       case ':' ... '=':
       case '[' ... ']':
       case '{' ... '|':
-        ++buf[i];
+        buf[i] += 2;
         break;
-      case 'F' ... 'Z':
-      case 'f' ... 'z':
+      case 'E' ... 'Z':
+      case 'e' ... 'z':
       case '1' ... '9':
       case ',' ... '.':
       case '>' ... '@':
       case '^' ... '`':
       case '}' ... '~':
-        --buf[i];
+        buf[i] -= 2;
         break;
       case '+':
         buf[i] = '/';
@@ -139,12 +129,12 @@ static void type_replace(u8 *buf, u32 len) {
       case '\t':
         buf[i] = ' ';
         break;
-      case 1:
-        buf[i] = 0;
-        break;
-      case 0:
-        buf[i] = 1;
-        break;
+        /*
+              case '\r':
+              case '\n':
+                // nothing ...
+                break;
+        */
       default:
         buf[i] ^= 0xff;
 
@@ -156,63 +146,96 @@ static void type_replace(u8 *buf, u32 len) {
 
 static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum) {
 
-  struct range *ranges = add_range(NULL, 0, len);
+  struct range *ranges = add_range(NULL, 0, len), *rng;
   u8 *          backup = ck_alloc_nozero(len);
+  u8 *          changed = ck_alloc_nozero(len);
 
   u64 orig_hit_cnt, new_hit_cnt;
   orig_hit_cnt = afl->queued_paths + afl->unique_crashes;
 
   afl->stage_name = "colorization";
   afl->stage_short = "colorization";
-  afl->stage_max = 10000;
+  afl->stage_max = 100000; // <= this needs a more variable approach
 
-  struct range *rng = NULL;
   afl->stage_cur = 0;
   memcpy(backup, buf, len);
-  type_replace(backup, len);
+  memcpy(changed, buf, len);
+  type_replace(changed, len);
+
+//  DEBUGF("Colorization start fname=%s len=%u\n", afl->queue_cur->fname, len);
 
   while ((rng = pop_biggest_range(&ranges)) != NULL &&
          afl->stage_cur < afl->stage_max) {
 
     u32 s = rng->end - rng->start;
+    memcpy(buf + rng->start, changed + rng->start, s);
 
-    if (s != 0) {                                        /* Range not empty */
+    u64 cksum;
+    u64 start_us = get_cur_time_us();
+    if (unlikely(get_exec_checksum(afl, buf, len, &cksum))) {
 
-      memcpy(buf + rng->start, backup + rng->start, s);
-
-      u64 cksum;
-      u64 start_us = get_cur_time_us();
-      if (unlikely(get_exec_checksum(afl, buf, len, &cksum))) {
-
-        goto checksum_fail;
-
-      }
-
-      u64 stop_us = get_cur_time_us();
-
-      /* Discard if the mutations change the path or if it is too decremental
-        in speed - how could the same path have a much different speed
-        though ...*/
-      if (cksum != exec_cksum ||
-          ((stop_us - start_us > 3 * afl->queue_cur->exec_us) &&
-           likely(!afl->fixed_seed))) {
-
-        memcpy(buf + rng->start, backup + rng->start, s);
-
-        if (s > 1) {
-
-          ranges = add_range(ranges, rng->start, rng->start + s / 2);
-          ranges = add_range(ranges, rng->start + s / 2 + 1, rng->end);
-
-        }
-
-      }
+      goto checksum_fail;
 
     }
 
-    ck_free(rng);
-    rng = NULL;
+    u64 stop_us = get_cur_time_us();
+
+    /* Discard if the mutations change the path or if it is too decremental
+      in speed - how could the same path have a much different speed
+      though ...*/
+    // fprintf(stderr, "result: %llx <-> %llx %u-%u\n", cksum, exec_cksum,
+    // rng->start, rng->end);
+    if (cksum != exec_cksum /*||
+        ((stop_us - start_us > 3 * afl->queue_cur->exec_us) &&
+         likely(!afl->fixed_seed))*/) {
+
+      memcpy(buf + rng->start, backup + rng->start, s);
+
+      if (s) {  // to not add 0 size ranges
+
+        // fprintf(stderr, "adding: %u-%u + %u-%u\n", rng->start, rng->start + s
+        // / 2, rng->start + s / 2 + 1, rng->end);
+        ranges = add_range(ranges, rng->start, rng->start + s / 2);
+        ranges = add_range(ranges, rng->start + s / 2 + 1, rng->end);
+
+      }
+
+      if (ranges == rng) {
+
+        ranges = rng->next;
+        if (ranges) { ranges->prev = NULL; }
+
+      } else if (rng->next) {
+
+        rng->prev->next = rng->next;
+        rng->next->prev = rng->prev;
+
+      } else {
+
+        if (rng->prev) { rng->prev->next = NULL; }
+
+      }
+
+      free(rng);
+
+    } else {
+
+      rng->ok = 1;
+
+    }
+
     ++afl->stage_cur;
+
+  }
+
+  /* temporary: clean ranges */
+  while (ranges) {
+
+    // if (ranges->ok) fprintf(stderr, "R: %u-%u\n", ranges->start,
+    // ranges->end);
+    rng = ranges;
+    ranges = rng->next;
+    ck_free(rng);
 
   }
 
@@ -232,35 +255,21 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum) {
   }
 
   new_hit_cnt = afl->queued_paths + afl->unique_crashes;
+  //#ifdef _DEBUG
+//  DEBUGF("Colorization: fname=%s result=%u execs=%u found=%llu\n",
+//         afl->queue_cur->fname, afl->queue_cur->fully_colorized, afl->stage_cur,
+//         new_hit_cnt - orig_hit_cnt);
+  //#endif
   afl->stage_finds[STAGE_COLORIZATION] += new_hit_cnt - orig_hit_cnt;
   afl->stage_cycles[STAGE_COLORIZATION] += afl->stage_cur;
   ck_free(backup);
-  ck_free(rng);
-  rng = NULL;
-
-  while (ranges) {
-
-    rng = ranges;
-    ranges = rng->next;
-    ck_free(rng);
-    rng = NULL;
-
-  }
+  ck_free(changed);
 
   return 0;
 
 checksum_fail:
-  if (rng) { ck_free(rng); }
   ck_free(backup);
-
-  while (ranges) {
-
-    rng = ranges;
-    ranges = rng->next;
-    ck_free(rng);
-    rng = NULL;
-
-  }
+  ck_free(changed);
 
   return 1;
 
@@ -343,8 +352,6 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
                               u64 pattern, u64 repl, u64 o_pattern, u32 idx,
                               u8 *orig_buf, u8 *buf, u32 len, u8 do_reverse,
                               u8 *status) {
-
-  if (!buf) { FATAL("BUG: buf was NULL. Please report this.\n"); }
 
   u64 *buf_64 = (u64 *)&buf[idx];
   u32 *buf_32 = (u32 *)&buf[idx];
@@ -570,6 +577,8 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len) {
   u8  s_v0_inc = 1, s_v1_inc = 1;
   u8  s_v0_dec = 1, s_v1_dec = 1;
 
+  // fprintf(stderr, "key: %u\n", key);
+
   for (i = 0; i < loggeds; ++i) {
 
     fails = 0;
@@ -609,13 +618,21 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len) {
 
     }
 
+    // fprintf(stderr, "Handling: %llx->%llx vs %llx->%llx\n", orig_o->v0,
+    // o->v0,
+    //        orig_o->v1, o->v1);
+
     for (idx = 0; idx < len && fails < 8; ++idx) {
 
       status = 0;
-      if (unlikely(cmp_extend_encoding(afl, h, o->v0, o->v1, orig_o->v0, idx,
-                                       orig_buf, buf, len, 1, &status))) {
+      if (o->v0 != orig_o->v0) {
 
-        return 1;
+        if (unlikely(cmp_extend_encoding(afl, h, o->v0, o->v1, orig_o->v0, idx,
+                                         orig_buf, buf, len, 1, &status))) {
+
+          return 1;
+
+        }
 
       }
 
@@ -630,10 +647,14 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len) {
       }
 
       status = 0;
-      if (unlikely(cmp_extend_encoding(afl, h, o->v1, o->v0, orig_o->v1, idx,
-                                       orig_buf, buf, len, 1, &status))) {
+      if (o->v1 != orig_o->v1) {
 
-        return 1;
+        if (unlikely(cmp_extend_encoding(afl, h, o->v1, o->v0, orig_o->v1, idx,
+                                         orig_buf, buf, len, 1, &status))) {
+
+          return 1;
+
+        }
 
       }
 
@@ -870,10 +891,10 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
 
     if (!afl->shm.cmp_map->headers[k].hits) { continue; }
 
-    if (afl->pass_stats[k].total &&
+    if (/*afl->pass_stats[k].total &&
         (rand_below(afl, afl->pass_stats[k].total) >=
-             afl->pass_stats[k].faileds ||
-         afl->pass_stats[k].total == 0xff)) {
+             afl->pass_stats[k].faileds ||*/
+        afl->pass_stats[k].total == 0xff) {
 
       afl->shm.cmp_map->headers[k].hits = 0;  // ignore this cmp
 
@@ -916,7 +937,7 @@ exit_its:
   afl->stage_finds[STAGE_ITS] += new_hit_cnt - orig_hit_cnt;
   afl->stage_cycles[STAGE_ITS] += afl->fsrv.total_execs - orig_execs;
 
-  memcpy(orig_buf, buf, len);
+  memcpy(buf, orig_buf, len);
 
   return r;
 

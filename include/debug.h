@@ -344,12 +344,12 @@ static inline const char *colorfilter(const char *x) {
 
 /* Show a prefixed debug output. */
 
-#define DEBUGF(x...)                         \
-  do {                                       \
-                                             \
-    SAYF(cMGN "[D] " cBRI "DEBUG: " cRST x); \
-    SAYF(cRST "");                           \
-                                             \
+#define DEBUGF(x...)                                    \
+  do {                                                  \
+                                                        \
+    fprintf(stderr, cMGN "[D] " cBRI "DEBUG: " cRST x); \
+    fprintf(stderr, cRST "");                           \
+                                                        \
   } while (0)
 
 /* Error-checking versions of read() and write() that call RPFATAL() as
