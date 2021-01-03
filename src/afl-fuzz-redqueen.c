@@ -99,12 +99,56 @@ static u8 get_exec_checksum(afl_state_t *afl, u8 *buf, u32 len, u64 *cksum) {
 
 }
 
-static void xor_replace(u8 *buf, u32 len) {
+
+/* replace everything but stay in the same type */
+static void type_replace(u8 *buf, u32 len) {
 
   u32 i;
   for (i = 0; i < len; ++i) {
 
-    buf[i] ^= 0xff;
+    // wont help for UTF or non-latin charsets
+    switch (buf[i]) {
+
+      case 'A' ... 'E':
+      case 'a' ... 'e':
+      case '0':
+      case '!' ... '*':
+      case ':' ... '=':
+      case '[' ... ']':
+      case '{' ... '|':
+        ++buf[i];
+        break;
+      case 'F' ... 'Z':
+      case 'f' ... 'z':
+      case '1' ... '9':
+      case ',' ... '.':
+      case '>' ... '@':
+      case '^' ... '`':
+      case '}' ... '~':
+        --buf[i];
+        break;
+      case '+':
+        buf[i] = '/';
+        break;
+      case '/':
+        buf[i] = '+';
+        break;
+      case ' ':
+        buf[i] = '\t';
+        break;
+      case '\t':
+        buf[i] = ' ';
+        break;
+      case 1:
+        buf[i] = 0;
+        break;
+      case 0:
+        buf[i] = 1;
+        break;
+      default:
+        buf[i] ^= 0xff;
+
+    }
 
   }
 
@@ -120,21 +164,21 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum) {
 
   afl->stage_name = "colorization";
   afl->stage_short = "colorization";
-  afl->stage_max = 1000;
+  afl->stage_max = 10000;
 
   struct range *rng = NULL;
   afl->stage_cur = 0;
+  memcpy(backup, buf, len);
+  type_replace(backup, len);
+
   while ((rng = pop_biggest_range(&ranges)) != NULL &&
          afl->stage_cur < afl->stage_max) {
 
     u32 s = rng->end - rng->start;
 
-    if (s != 0) {
+    if (s != 0) {                                        /* Range not empty */
 
-      /* Range not empty */
-
-      memcpy(backup, buf + rng->start, s);
-      xor_replace(buf + rng->start, s);
+      memcpy(buf + rng->start, backup + rng->start, s);
 
       u64 cksum;
       u64 start_us = get_cur_time_us();
@@ -146,15 +190,21 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum) {
 
       u64 stop_us = get_cur_time_us();
 
-      /* Discard if the mutations change the paths or if it is too decremental
-        in speed */
+      /* Discard if the mutations change the path or if it is too decremental
+        in speed - how could the same path have a much different speed
+        though ...*/
       if (cksum != exec_cksum ||
           ((stop_us - start_us > 3 * afl->queue_cur->exec_us) &&
            likely(!afl->fixed_seed))) {
 
-        ranges = add_range(ranges, rng->start, rng->start + s / 2);
-        ranges = add_range(ranges, rng->start + s / 2 + 1, rng->end);
-        memcpy(buf + rng->start, backup, s);
+        memcpy(buf + rng->start, backup + rng->start, s);
+
+        if (s > 1) {
+
+          ranges = add_range(ranges, rng->start, rng->start + s / 2);
+          ranges = add_range(ranges, rng->start + s / 2 + 1, rng->end);
+
+        }
 
       }
 
@@ -166,7 +216,20 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum) {
 
   }
 
-  if (afl->stage_cur < afl->stage_max) { afl->queue_cur->fully_colorized = 1; }
+  /* it makes no sense to retry in the next cycle, it will be the same result.
+    so either we force full colorization as long as it takes or we try only
+    once with a high enough number of tries. */
+  if (afl->stage_cur < afl->stage_max) {
+
+    afl->queue_cur->fully_colorized = 1;
+
+  } else {
+
+    // 2 makes no difference but allows us in the future to detect those seeds
+    // that did not fully colorize.
+    afl->queue_cur->fully_colorized = 2;
+
+  }
 
   new_hit_cnt = afl->queued_paths + afl->unique_crashes;
   afl->stage_finds[STAGE_COLORIZATION] += new_hit_cnt - orig_hit_cnt;
