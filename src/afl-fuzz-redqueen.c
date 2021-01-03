@@ -40,6 +40,14 @@ struct range {
 
 };
 
+struct tainted {
+
+  u32             pos;
+  u32             len;
+  struct tainted *next;
+
+};
+
 static struct range *add_range(struct range *ranges, u32 start, u32 end) {
 
   struct range *r = ck_alloc_nozero(sizeof(struct range));
@@ -62,7 +70,7 @@ static struct range *pop_biggest_range(struct range **ranges) {
 
     if (!r->ok) {
 
-      u32 s = r->end - r->start;
+      u32 s = 1 + r->end - r->start;
 
       if (s >= max_size) {
 
@@ -144,30 +152,32 @@ static void type_replace(u8 *buf, u32 len) {
 
 }
 
-static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum) {
+static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
+                       struct tainted **taints) {
 
-  struct range *ranges = add_range(NULL, 0, len), *rng;
-  u8 *          backup = ck_alloc_nozero(len);
-  u8 *          changed = ck_alloc_nozero(len);
+  struct range *  ranges = add_range(NULL, 0, len), *rng;
+  struct tainted *taint = NULL;
+  u8 *            backup = ck_alloc_nozero(len);
+  u8 *            changed = ck_alloc_nozero(len);
 
   u64 orig_hit_cnt, new_hit_cnt;
   orig_hit_cnt = afl->queued_paths + afl->unique_crashes;
 
   afl->stage_name = "colorization";
   afl->stage_short = "colorization";
-  afl->stage_max = 100000; // <= this needs a more variable approach
+  afl->stage_max = 100000;  // <= this needs a more variable approach
 
   afl->stage_cur = 0;
   memcpy(backup, buf, len);
   memcpy(changed, buf, len);
   type_replace(changed, len);
 
-//  DEBUGF("Colorization start fname=%s len=%u\n", afl->queue_cur->fname, len);
+  DEBUGF("Colorization start fname=%s len=%u\n", afl->queue_cur->fname, len);
 
   while ((rng = pop_biggest_range(&ranges)) != NULL &&
          afl->stage_cur < afl->stage_max) {
 
-    u32 s = rng->end - rng->start;
+    u32 s = 1 + rng->end - rng->start;
     memcpy(buf + rng->start, changed + rng->start, s);
 
     u64 cksum;
@@ -183,20 +193,19 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum) {
     /* Discard if the mutations change the path or if it is too decremental
       in speed - how could the same path have a much different speed
       though ...*/
-    // fprintf(stderr, "result: %llx <-> %llx %u-%u\n", cksum, exec_cksum,
-    // rng->start, rng->end);
-    if (cksum != exec_cksum /*||
+    //fprintf(stderr, "result: %llx <-> %llx %u-%u\n", cksum, exec_cksum,
+    //        rng->start, rng->end);
+    if (cksum != exec_cksum ||
         ((stop_us - start_us > 3 * afl->queue_cur->exec_us) &&
-         likely(!afl->fixed_seed))*/) {
+         likely(!afl->fixed_seed))) {
 
       memcpy(buf + rng->start, backup + rng->start, s);
 
-      if (s) {  // to not add 0 size ranges
+      if (s > 1) {  // to not add 0 size ranges
 
-        // fprintf(stderr, "adding: %u-%u + %u-%u\n", rng->start, rng->start + s
-        // / 2, rng->start + s / 2 + 1, rng->end);
-        ranges = add_range(ranges, rng->start, rng->start + s / 2);
-        ranges = add_range(ranges, rng->start + s / 2 + 1, rng->end);
+        ranges = add_range(ranges, rng->start, rng->start - 1 + s / 2);
+        ranges = add_range(ranges, rng->start + s / 2 , rng->end);
+        //fprintf(stderr, "split: s=%u %u-%u + %u-%u\n", s, rng->start, rng->start - 1 + s / 2, rng->start - 1 + s / 2 , rng->end);
 
       }
 
@@ -228,11 +237,65 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum) {
 
   }
 
+  rng = ranges;
+  while (rng) {
+
+    //if (rng->ok == 1) fprintf(stderr, "R: %u-%u\n", rng->start, rng->end);
+    rng = rng->next;
+
+  }
+
+  u32 i = 1;
+  while (i) {
+
+  restart:
+    i = 0;
+    struct range *r = NULL;
+    u32           pos = (u32)-1;
+    rng = ranges;
+
+    while (rng) {
+
+      if (rng->ok == 1 && rng->start < pos) {
+
+        if (taint && taint->pos + taint->len == rng->start) {
+
+          taint->len += (1 + rng->end - rng->start);
+          rng->ok = 2;
+          goto restart;
+
+        } else {
+
+          r = rng;
+          pos = rng->start;
+
+        }
+
+      }
+
+      rng = rng->next;
+
+    }
+
+    if (r) {
+
+      struct tainted *t = ck_alloc_nozero(sizeof(struct tainted));
+      t->pos = r->start;
+      t->len = 1 + r->end - r->start;
+      t->next = taint;
+      taint = t;
+      r->ok = 2;
+      i = 1;
+
+    }
+
+  }
+
+  *taints = taint;
+
   /* temporary: clean ranges */
   while (ranges) {
 
-    // if (ranges->ok) fprintf(stderr, "R: %u-%u\n", ranges->start,
-    // ranges->end);
     rng = ranges;
     ranges = rng->next;
     ck_free(rng);
@@ -256,9 +319,9 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum) {
 
   new_hit_cnt = afl->queued_paths + afl->unique_crashes;
   //#ifdef _DEBUG
-//  DEBUGF("Colorization: fname=%s result=%u execs=%u found=%llu\n",
-//         afl->queue_cur->fname, afl->queue_cur->fully_colorized, afl->stage_cur,
-//         new_hit_cnt - orig_hit_cnt);
+  DEBUGF("Colorization: fname=%s result=%u execs=%u found=%llu\n",
+         afl->queue_cur->fname, afl->queue_cur->fully_colorized, afl->stage_cur,
+         new_hit_cnt - orig_hit_cnt);
   //#endif
   afl->stage_finds[STAGE_COLORIZATION] += new_hit_cnt - orig_hit_cnt;
   afl->stage_cycles[STAGE_COLORIZATION] += afl->stage_cur;
@@ -577,7 +640,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len) {
   u8  s_v0_inc = 1, s_v1_inc = 1;
   u8  s_v0_dec = 1, s_v1_dec = 1;
 
-  // fprintf(stderr, "key: %u\n", key);
+  //fprintf(stderr, "key: %u\n", key);
 
   for (i = 0; i < loggeds; ++i) {
 
@@ -618,8 +681,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len) {
 
     }
 
-    // fprintf(stderr, "Handling: %llx->%llx vs %llx->%llx\n", orig_o->v0,
-    // o->v0,
+    //fprintf(stderr, "Handling: %llx->%llx vs %llx->%llx\n", orig_o->v0, o->v0,
     //        orig_o->v1, o->v1);
 
     for (idx = 0; idx < len && fails < 8; ++idx) {
@@ -870,7 +932,17 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
 
   memcpy(afl->orig_cmp_map, afl->shm.cmp_map, sizeof(struct cmp_map));
 
-  if (unlikely(colorization(afl, buf, len, exec_cksum))) { return 1; }
+  struct tainted *taint = NULL;
+
+  if (unlikely(colorization(afl, buf, len, exec_cksum, &taint))) { return 1; }
+
+  struct tainted *t = taint;
+  while (t) {
+
+    fprintf(stderr, "T: pos=%u len=%u\n", t->pos, t->len);
+    t = t->next;
+
+  }
 
   // do it manually, forkserver clear only afl->fsrv.trace_bits
   memset(afl->shm.cmp_map->headers, 0, sizeof(afl->shm.cmp_map->headers));
