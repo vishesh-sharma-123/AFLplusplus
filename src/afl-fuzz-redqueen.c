@@ -346,9 +346,15 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
 
   new_hit_cnt = afl->queued_paths + afl->unique_crashes;
   //#ifdef _DEBUG
-  DEBUGF("Colorization: fname=%s len=%u result=%u execs=%u found=%llu\n",
+  char fn[4096];
+  snprintf(fn, sizeof(fn), "%s/introspection_color.txt", afl->out_dir);
+  FILE *f = fopen(fn, "a");
+  if (f) {
+  fprintf(f, "Colorization: fname=%s len=%u result=%u execs=%u found=%llu\n",
          afl->queue_cur->fname, len, afl->queue_cur->fully_colorized,
          afl->stage_cur, new_hit_cnt - orig_hit_cnt);
+  fclosef(f);
+  }
   //#endif
   afl->stage_finds[STAGE_COLORIZATION] += new_hit_cnt - orig_hit_cnt;
   afl->stage_cycles[STAGE_COLORIZATION] += afl->stage_cur;
@@ -719,8 +725,8 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
     }
 
-    fprintf(stderr, "Handling: %llx->%llx vs %llx->%llx\n", orig_o->v0, o->v0,
-            orig_o->v1, o->v1);
+    // fprintf(stderr, "Handling: %llx->%llx vs %llx->%llx\n", orig_o->v0, o->v0,
+    //        orig_o->v1, o->v1);
 
     t = taint;
     while (t->next) {
@@ -743,9 +749,6 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
       status = 0;
       if (o->v0 != orig_o->v0) {
-
-        fprintf(stderr, "Handling: !:%llx->%llx vs %llx->%llx at %u\n",
-                orig_o->v0, o->v0, orig_o->v1, o->v1, idx);
 
         if (unlikely(cmp_extend_encoding(afl, h, o->v0, o->v1, orig_o->v0,
                                          orig_o->v1, idx, orig_buf, buf, len, 1,
@@ -770,8 +773,6 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
       status = 0;
       if (o->v1 != orig_o->v1) {
 
-        fprintf(stderr, "Handling: %llx->%llx vs !:%llx->%llx at %u\n",
-                orig_o->v0, o->v0, orig_o->v1, o->v1, idx);
         if (unlikely(cmp_extend_encoding(afl, h, o->v1, o->v0, orig_o->v1,
                                          orig_o->v0, idx, orig_buf, buf, len, 1,
                                          &status))) {
@@ -1022,7 +1023,7 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
   struct tainted *t = taint;
   while (t) {
 
-    fprintf(stderr, "T: pos=%u len=%u\n", t->pos, t->len);
+    // fprintf(stderr, "T: pos=%u len=%u\n", t->pos, t->len);
     t = t->next;
 
   }
