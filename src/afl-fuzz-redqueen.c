@@ -353,11 +353,16 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
   snprintf(fn, sizeof(fn), "%s/introspection_color.txt", afl->out_dir);
   FILE *f = fopen(fn, "a");
   if (f) {
-  fprintf(f, "Colorization: fname=%s len=%u result=%u execs=%u found=%llu taint=%u\n",
-         afl->queue_cur->fname, len, afl->queue_cur->fully_colorized,
-         afl->stage_cur, new_hit_cnt - orig_hit_cnt, positions);
-  fclose(f);
+
+    fprintf(f,
+            "Colorization: fname=%s len=%u result=%u execs=%u found=%llu "
+            "taint=%u\n",
+            afl->queue_cur->fname, len, afl->queue_cur->fully_colorized,
+            afl->stage_cur, new_hit_cnt - orig_hit_cnt, positions);
+    fclose(f);
+
   }
+
   //#endif
   afl->stage_finds[STAGE_COLORIZATION] += new_hit_cnt - orig_hit_cnt;
   afl->stage_cycles[STAGE_COLORIZATION] += afl->stage_cur;
@@ -672,7 +677,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
   struct cmp_header *h = &afl->shm.cmp_map->headers[key];
   struct tainted *   t;
-  u32                i, j, idx;
+  u32                i, j, idx, have_taint = 1;
   u32                loggeds = h->hits;
   if (h->hits > CMP_MAP_H) { loggeds = CMP_MAP_H; }
 
@@ -728,19 +733,30 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
     }
 
-    // fprintf(stderr, "Handling: %llx->%llx vs %llx->%llx\n", orig_o->v0, o->v0,
+    // fprintf(stderr, "Handling: %llx->%llx vs %llx->%llx\n", orig_o->v0,
+    // o->v0,
     //        orig_o->v1, o->v1);
 
-    t = taint;
-    while (t->next) {
+    if (taint) {
 
-      t = t->next;
+      t = taint;
+
+      while (t->next) {
+
+        t = t->next;
+
+      }
+
+    } else {
+
+      have_taint = 0;
+      t = NULL;
 
     }
 
     for (idx = 0; idx < len && fails < 8; ++idx) {
 
-      if (!t || idx < t->pos) {
+      if (have_taint && (!t || idx < t->pos)) {
 
         continue;
 
@@ -871,7 +887,7 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
   struct tainted *   t;
   struct cmp_header *h = &afl->shm.cmp_map->headers[key];
-  u32                i, j, idx;
+  u32                i, j, idx, have_taint = 1;
 
   u32 loggeds = h->hits;
   if (h->hits > CMP_MAP_RTN_H) { loggeds = CMP_MAP_RTN_H; }
@@ -903,16 +919,25 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
     }
 
-    t = taint;
-    while (t->next) {
+    if (taint) {
 
-      t = t->next;
+      t = taint;
+      while (t->next) {
+
+        t = t->next;
+
+      }
+
+    } else {
+
+      have_taint = 0;
+      t = NULL;
 
     }
 
     for (idx = 0; idx < len && fails < 8; ++idx) {
 
-      if (!t || idx < t->pos) {
+      if (have_taint && (!t || idx < t->pos)) {
 
         continue;
 
@@ -1087,7 +1112,11 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
 
     } else {
 
-      if (unlikely(rtn_fuzz(afl, k, orig_buf, buf, len, taint))) { goto exit_its; }
+      if (unlikely(rtn_fuzz(afl, k, orig_buf, buf, len, taint))) {
+
+        goto exit_its;
+
+      }
 
     }
 
