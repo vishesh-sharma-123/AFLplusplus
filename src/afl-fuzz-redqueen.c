@@ -271,6 +271,7 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
   }
 
   u32 i = 1;
+  u32 positions = 0;
   while (i) {
 
   restart:
@@ -286,6 +287,7 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
         if (taint && taint->pos + taint->len == rng->start) {
 
           taint->len += (1 + rng->end - rng->start);
+          positions += (1 + rng->end - rng->start);
           rng->ok = 2;
           goto restart;
 
@@ -307,6 +309,7 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
       struct tainted *t = ck_alloc_nozero(sizeof(struct tainted));
       t->pos = r->start;
       t->len = 1 + r->end - r->start;
+      positions += (1 + r->end - r->start);
       if (likely(taint)) { taint->prev = t; }
       t->next = taint;
       t->prev = NULL;
@@ -350,10 +353,10 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
   snprintf(fn, sizeof(fn), "%s/introspection_color.txt", afl->out_dir);
   FILE *f = fopen(fn, "a");
   if (f) {
-  fprintf(f, "Colorization: fname=%s len=%u result=%u execs=%u found=%llu\n",
+  fprintf(f, "Colorization: fname=%s len=%u result=%u execs=%u found=%llu taint=%u\n",
          afl->queue_cur->fname, len, afl->queue_cur->fully_colorized,
-         afl->stage_cur, new_hit_cnt - orig_hit_cnt);
-  fclosef(f);
+         afl->stage_cur, new_hit_cnt - orig_hit_cnt, positions);
+  fclose(f);
   }
   //#endif
   afl->stage_finds[STAGE_COLORIZATION] += new_hit_cnt - orig_hit_cnt;
