@@ -756,13 +756,17 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
     for (idx = 0; idx < len && fails < 8; ++idx) {
 
-      if (have_taint && (!t || idx < t->pos)) {
+      if (have_taint) {
 
-        continue;
+        if (!t || idx < t->pos) {
 
-      } else if (idx == t->pos + t->len - 1) {
+          continue;
 
-        t = t->prev;
+        } else if (idx == t->pos + t->len - 1) {
+
+          t = t->prev;
+
+        }
 
       }
 
@@ -937,13 +941,17 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
     for (idx = 0; idx < len && fails < 8; ++idx) {
 
-      if (have_taint && (!t || idx < t->pos)) {
+      if (have_taint) {
 
-        continue;
+        if (!t || idx < t->pos) {
 
-      } else if (idx == t->pos + t->len - 1) {
+          continue;
 
-        t = t->prev;
+        } else if (idx == t->pos + t->len - 1) {
+
+          t = t->prev;
+
+        }
 
       }
 
