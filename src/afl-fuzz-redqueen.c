@@ -181,7 +181,7 @@ static void type_replace(afl_state_t *afl, u8 *buf, u32 len) {
 static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
                        struct tainted **taints) {
 
-  struct range *  ranges = add_range(NULL, 0, len), *rng;
+  struct range *  ranges = add_range(NULL, 0, len - 1), *rng;
   struct tainted *taint = NULL;
   u8 *            backup = ck_alloc_nozero(len);
   u8 *            changed = ck_alloc_nozero(len);
@@ -202,6 +202,7 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
          afl->stage_cur < afl->stage_max) {
 
     u32 s = 1 + rng->end - rng->start;
+
     memcpy(buf + rng->start, changed + rng->start, s);
 
     u64 cksum;
@@ -217,8 +218,6 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
     /* Discard if the mutations change the path or if it is too decremental
       in speed - how could the same path have a much different speed
       though ...*/
-    // fprintf(stderr, "result: %llx <-> %llx %u-%u\n", cksum, exec_cksum,
-    //        rng->start, rng->end);
     if (cksum != exec_cksum ||
         ((stop_us - start_us > 3 * afl->queue_cur->exec_us) &&
          likely(!afl->fixed_seed))) {
@@ -229,8 +228,6 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
 
         ranges = add_range(ranges, rng->start, rng->start - 1 + s / 2);
         ranges = add_range(ranges, rng->start + s / 2, rng->end);
-        // fprintf(stderr, "split: s=%u %u-%u + %u-%u\n", s, rng->start,
-        // rng->start - 1 + s / 2, rng->start - 1 + s / 2 , rng->end);
 
       }
 
@@ -265,7 +262,6 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
   rng = ranges;
   while (rng) {
 
-    // if (rng->ok == 1) fprintf(stderr, "R: %u-%u\n", rng->start, rng->end);
     rng = rng->next;
 
   }
@@ -348,7 +344,8 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
   }
 
   new_hit_cnt = afl->queued_paths + afl->unique_crashes;
-  //#ifdef _DEBUG
+
+#ifdef _DEBUG
   char fn[4096];
   snprintf(fn, sizeof(fn), "%s/introspection_color.txt", afl->out_dir);
   FILE *f = fopen(fn, "a");
@@ -363,7 +360,8 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
 
   }
 
-  //#endif
+#endif
+
   afl->stage_finds[STAGE_COLORIZATION] += new_hit_cnt - orig_hit_cnt;
   afl->stage_cycles[STAGE_COLORIZATION] += afl->stage_cur;
   ck_free(backup);
@@ -454,19 +452,29 @@ static int strntoull(const char *str, size_t sz, char **end, int base,
 
 static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
                               u64 pattern, u64 repl, u64 o_pattern,
-                              u64 changed_val, u32 idx, u8 *orig_buf, u8 *buf,
-                              u32 len, u8 do_reverse, u8 *status) {
+                              u64 changed_val, u8 attr, u32 idx, u32 taint_len,
+                              u8 *orig_buf, u8 *buf, u32 len, u8 do_reverse,
+                              u8 *status) {
 
-  //(void)(changed_val); // TODO
-  // we can use the information in changed_val to see if there is a computable
-  // i2s transformation.
-  // if (pattern != o_pattern && repl != changed_val)
-  //   switch(pattern != o_pattern) {
+  //  (void)(changed_val); // TODO
+  //  we can use the information in changed_val to see if there is a
+  //  computable i2s transformation.
+  //  if (pattern != o_pattern && repl != changed_val) {
 
-  //      detect uppercase <-> lowercase, base64, hex encoding, etc.:
-  //      repl = reverse_transform(TYPE, pattern);
+  //    u64 in_diff = pattern - o_pattern, out_diff = repl - changed_val;
+  //    if (in_diff != out_diff) {
+
+  //      switch(in_diff) {
+
+  //        detect uppercase <-> lowercase, base64, hex encoding, etc.:
+  //        repl = reverse_transform(TYPE, pattern);
+  //      }
   //    }
+  //  }
   //  not 100% but would have a chance to be detected
+
+  // fprintf(stderr, "Encode: %llx->%llx into %llx(<-%llx) at pos=%u (%u)\n",
+  // o_pattern, pattern, repl, changed_val, idx, attr);
 
   u64 *buf_64 = (u64 *)&buf[idx];
   u32 *buf_32 = (u32 *)&buf[idx];
@@ -477,7 +485,7 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
   u16 *o_buf_16 = (u16 *)&orig_buf[idx];
   u8 * o_buf_8 = &orig_buf[idx];
 
-  u32 its_len = len - idx;
+  u32 its_len = MIN(len - idx, taint_len);
 
   u8 *               endptr;
   u8                 use_num = 0, use_unum = 0;
@@ -530,11 +538,16 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   if (SHAPE_BYTES(h->shape) >= 8 && *status != 1) {
 
-    if (its_len >= 8 && *buf_64 == pattern && *o_buf_64 == o_pattern) {
+    // if this is an fcmp (attr & 8 == 8) then do not compare the patterns -
+    // due to a bug in llvm dynamic float bitcasts do not work :(
+    // the value 16 means this is a +- 1.0 test case
+    if (its_len >= 8 && (((attr & 8) == 8 || attr == 16 || attr == 0) ||
+                         (*buf_64 == pattern && *o_buf_64 == o_pattern))) {
 
+      u64 tmp_64 = *buf_64;
       *buf_64 = repl;
       if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-      *buf_64 = pattern;
+      *buf_64 = tmp_64;
 
     }
 
@@ -543,7 +556,8 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
       if (unlikely(cmp_extend_encoding(afl, h, SWAP64(pattern), SWAP64(repl),
                                        SWAP64(o_pattern), SWAP64(changed_val),
-                                       idx, orig_buf, buf, len, 0, status))) {
+                                       attr, idx, taint_len, orig_buf, buf, len,
+                                       0, status))) {
 
         return 1;
 
@@ -555,12 +569,18 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   if (SHAPE_BYTES(h->shape) >= 4 && *status != 1) {
 
-    if (its_len >= 4 && *buf_32 == (u32)pattern &&
-        *o_buf_32 == (u32)o_pattern) {
+    // if (its_len >= 4 && attr <= 1) fprintf(stderr, "TestU32: %u>=4 %x==%x
+    // %x==%x (idx=%u attr=%u) <= %x<-%x\n", its_len, *buf_32, pattern,
+    // *o_buf_32, o_pattern, idx, attr, repl, changed_val);
 
+    if (its_len >= 4 &&
+        ((*buf_32 == (u32)pattern && *o_buf_32 == (u32)o_pattern) ||
+         ((attr & 8) == 8 || attr == 16 || attr == 0))) {
+
+      u32 tmp_32 = *buf_32;
       *buf_32 = (u32)repl;
       if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-      *buf_32 = pattern;
+      *buf_32 = tmp_32;
 
     }
 
@@ -569,7 +589,8 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
       if (unlikely(cmp_extend_encoding(afl, h, SWAP32(pattern), SWAP32(repl),
                                        SWAP32(o_pattern), SWAP32(changed_val),
-                                       idx, orig_buf, buf, len, 0, status))) {
+                                       attr, idx, taint_len, orig_buf, buf, len,
+                                       0, status))) {
 
         return 1;
 
@@ -581,12 +602,14 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   if (SHAPE_BYTES(h->shape) >= 2 && *status != 1) {
 
-    if (its_len >= 2 && *buf_16 == (u16)pattern &&
-        *o_buf_16 == (u16)o_pattern) {
+    if (its_len >= 2 &&
+        ((*buf_16 == (u16)pattern && *o_buf_16 == (u16)o_pattern) ||
+         attr == 0)) {
 
+      u16 tmp_16 = *buf_16;
       *buf_16 = (u16)repl;
       if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-      *buf_16 = (u16)pattern;
+      *buf_16 = tmp_16;
 
     }
 
@@ -595,7 +618,8 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
       if (unlikely(cmp_extend_encoding(afl, h, SWAP16(pattern), SWAP16(repl),
                                        SWAP16(o_pattern), SWAP16(changed_val),
-                                       idx, orig_buf, buf, len, 0, status))) {
+                                       attr, idx, taint_len, orig_buf, buf, len,
+                                       0, status))) {
 
         return 1;
 
@@ -608,11 +632,105 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
   /* avoid CodeQL warning on unsigned overflow */
   if (/* SHAPE_BYTES(h->shape) >= 1 && */ *status != 1) {
 
-    if (its_len >= 1 && *buf_8 == (u8)pattern && *o_buf_8 == (u8)o_pattern) {
+    if (its_len >= 1 &&
+        ((*buf_8 == (u8)pattern && *o_buf_8 == (u8)o_pattern) || attr == 0)) {
 
+      u8 tmp_8 = *buf_8;
       *buf_8 = (u8)repl;
       if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-      *buf_8 = (u8)pattern;
+      *buf_8 = tmp_8;
+
+    }
+
+  }
+
+  // here we add and subract 1 from the value, but only if it is not an
+  // == or != comparison
+  // Bits: 1 = Equal, 2 = Greater, 3 = Lesser, 4 = Float
+
+  if (attr > 9 && attr < 16) {  // lesser/greater integer comparison
+
+    u64 repl_new;
+    if (SHAPE_BYTES(h->shape) == 4 && its_len >= 4) {
+
+      float *f = (float *)&repl;
+      float  g = *f;
+      g += 1.0;
+      u32 *r = (u32 *)&g;
+      repl_new = (u32)*r;
+
+    } else if (SHAPE_BYTES(h->shape) == 8 && its_len >= 8) {
+
+      float *f = (float *)&repl;
+      float  g = *f;
+      g += 1.0;
+
+      u64 *r = (u64 *)&g;
+      repl_new = *r;
+
+    } else {
+
+      return 0;
+
+    }
+
+    if (unlikely(cmp_extend_encoding(afl, h, pattern, repl_new, o_pattern,
+                                     changed_val, 16, idx, taint_len, orig_buf,
+                                     buf, len, 0, status))) {
+
+      return 1;
+
+    }
+
+    if (SHAPE_BYTES(h->shape) == 4) {
+
+      float *f = (float *)&repl;
+      float  g = *f;
+      g -= 1.0;
+      u32 *r = (u32 *)&g;
+      repl_new = (u32)*r;
+
+    } else if (SHAPE_BYTES(h->shape) == 8) {
+
+      float *f = (float *)&repl;
+      float  g = *f;
+      g -= 1.0;
+      u64 *r = (u64 *)&g;
+      repl_new = *r;
+
+    } else {
+
+      return 0;
+
+    }
+
+    if (unlikely(cmp_extend_encoding(afl, h, pattern, repl_new, o_pattern,
+                                     changed_val, 16, idx, taint_len, orig_buf,
+                                     buf, len, 0, status))) {
+
+      return 1;
+
+    }
+
+  } else if (attr > 1 && attr < 8) {  // lesser/greater integer comparison
+
+    u64 repl_new;
+
+    repl_new = repl + 1;
+    if (unlikely(cmp_extend_encoding(afl, h, pattern, repl_new, o_pattern,
+                                     changed_val, 0, idx, taint_len, orig_buf,
+                                     buf, len, 0, status))) {
+
+      return 1;
+
+    }
+
+    repl_new = repl - 1;
+    if (unlikely(cmp_extend_encoding(afl, h, pattern, repl_new, o_pattern,
+                                     changed_val, 0, idx, taint_len, orig_buf,
+                                     buf, len, 0, status))) {
+
+      return 1;
 
     }
 
@@ -677,7 +795,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
   struct cmp_header *h = &afl->shm.cmp_map->headers[key];
   struct tainted *   t;
-  u32                i, j, idx, have_taint = 1;
+  u32                i, j, idx, have_taint = 1, taint_len;
   u32                loggeds = h->hits;
   if (h->hits > CMP_MAP_H) { loggeds = CMP_MAP_H; }
 
@@ -691,8 +809,6 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
   u8  s_v0_fixed = 1, s_v1_fixed = 1;
   u8  s_v0_inc = 1, s_v1_inc = 1;
   u8  s_v0_dec = 1, s_v1_dec = 1;
-
-  // fprintf(stderr, "key: %u\n", key);
 
   for (i = 0; i < loggeds; ++i) {
 
@@ -733,9 +849,9 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
     }
 
-    // fprintf(stderr, "Handling: %llx->%llx vs %llx->%llx\n", orig_o->v0,
-    // o->v0,
-    //        orig_o->v1, o->v1);
+    // fprintf(stderr, "Handling: %llx->%llx vs %llx->%llx attr=%u shape=%u\n",
+    // orig_o->v0, o->v0, orig_o->v1, o->v1, h->attribute,
+    // SHAPE_BYTES(h->shape));
 
     if (taint) {
 
@@ -754,7 +870,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
     }
 
-    for (idx = 0; idx < len && fails < 8; ++idx) {
+    for (idx = 0; idx < len /*&& fails < 8*/; ++idx) {
 
       if (have_taint) {
 
@@ -762,20 +878,26 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
           continue;
 
-        } else if (idx == t->pos + t->len - 1) {
+        } else {
 
-          t = t->prev;
+          taint_len = t->pos + t->len - idx;
+
+          if (idx == t->pos + t->len - 1) { t = t->prev; }
 
         }
+
+      } else {
+
+        taint_len = len - idx;
 
       }
 
       status = 0;
       if (o->v0 != orig_o->v0) {
 
-        if (unlikely(cmp_extend_encoding(afl, h, o->v0, o->v1, orig_o->v0,
-                                         orig_o->v1, idx, orig_buf, buf, len, 1,
-                                         &status))) {
+        if (unlikely(cmp_extend_encoding(
+                afl, h, o->v0, o->v1, orig_o->v0, orig_o->v1, h->attribute, idx,
+                taint_len, orig_buf, buf, len, 1, &status))) {
 
           return 1;
 
@@ -789,6 +911,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
       } else if (status == 1) {
 
+        found_one = 1;
         break;
 
       }
@@ -796,9 +919,9 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
       status = 0;
       if (o->v1 != orig_o->v1) {
 
-        if (unlikely(cmp_extend_encoding(afl, h, o->v1, o->v0, orig_o->v1,
-                                         orig_o->v0, idx, orig_buf, buf, len, 1,
-                                         &status))) {
+        if (unlikely(cmp_extend_encoding(
+                afl, h, o->v1, o->v0, orig_o->v1, orig_o->v0, h->attribute, idx,
+                taint_len, orig_buf, buf, len, 1, &status))) {
 
           return 1;
 
@@ -812,16 +935,18 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
       } else if (status == 1) {
 
+        found_one = 1;
         break;
 
       }
 
     }
 
-    if (status == 1) { found_one = 1; }
+    // fprintf(stderr, "END: %llx->%llx vs %llx->%llx attr=%u i=%u found=%u\n",
+    // orig_o->v0, o->v0, orig_o->v1, o->v1, h->attribute, i, found_one);
 
     // If failed, add to dictionary
-    if (fails == 8) {
+    if (!found_one) {
 
       if (afl->pass_stats[key].total == 0) {
 
@@ -857,18 +982,18 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 }
 
 static u8 rtn_extend_encoding(afl_state_t *afl, u8 *pattern, u8 *repl,
-                              u8 *o_pattern, u32 idx, u8 *orig_buf, u8 *buf,
-                              u32 len, u8 *status) {
+                              u8 *o_pattern, u32 idx, u32 taint_len,
+                              u8 *orig_buf, u8 *buf, u32 len, u8 *status) {
 
   u32 i;
   u32 its_len = MIN((u32)32, len - idx);
-
+  its_len = MIN(its_len, taint_len);
   u8 save[32];
   memcpy(save, &buf[idx], its_len);
 
   for (i = 0; i < its_len; ++i) {
 
-    if (pattern[i] != buf[idx + i] || o_pattern[i] != orig_buf[idx + i] ||
+    if ((pattern[i] != buf[idx + i] && o_pattern[i] != orig_buf[idx + i]) ||
         *status == 1) {
 
       break;
@@ -891,7 +1016,7 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
   struct tainted *   t;
   struct cmp_header *h = &afl->shm.cmp_map->headers[key];
-  u32                i, j, idx, have_taint = 1;
+  u32                i, j, idx, have_taint = 1, taint_len;
 
   u32 loggeds = h->hits;
   if (h->hits > CMP_MAP_RTN_H) { loggeds = CMP_MAP_RTN_H; }
@@ -939,7 +1064,7 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
     }
 
-    for (idx = 0; idx < len && fails < 8; ++idx) {
+    for (idx = 0; idx < len /*&& fails < 8*/; ++idx) {
 
       if (have_taint) {
 
@@ -947,18 +1072,25 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
           continue;
 
-        } else if (idx == t->pos + t->len - 1) {
+        } else {
 
-          t = t->prev;
+          taint_len = t->pos + t->len - idx;
+
+          if (idx == t->pos + t->len - 1) { t = t->prev; }
 
         }
+
+      } else {
+
+        taint_len = len - idx;
 
       }
 
       status = 0;
 
       if (unlikely(rtn_extend_encoding(afl, o->v0, o->v1, orig_o->v0, idx,
-                                       orig_buf, buf, len, &status))) {
+                                       taint_len, orig_buf, buf, len,
+                                       &status))) {
 
         return 1;
 
@@ -970,6 +1102,7 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
       } else if (status == 1) {
 
+        found_one = 1;
         break;
 
       }
@@ -977,7 +1110,8 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
       status = 0;
 
       if (unlikely(rtn_extend_encoding(afl, o->v1, o->v0, orig_o->v1, idx,
-                                       orig_buf, buf, len, &status))) {
+                                       taint_len, orig_buf, buf, len,
+                                       &status))) {
 
         return 1;
 
@@ -989,16 +1123,15 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
       } else if (status == 1) {
 
+        found_one = 1;
         break;
 
       }
 
     }
 
-    if (status == 1) { found_one = 1; }
-
     // If failed, add to dictionary
-    if (fails == 8) {
+    if (!found_one) {
 
       if (afl->pass_stats[key].total == 0) {
 

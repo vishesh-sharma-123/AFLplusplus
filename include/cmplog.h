@@ -31,7 +31,7 @@
 #include "config.h"
 
 #define CMP_MAP_W 65536
-#define CMP_MAP_H 256
+#define CMP_MAP_H 32
 #define CMP_MAP_RTN_H (CMP_MAP_H / 4)
 
 #define SHAPE_BYTES(x) (x + 1)
@@ -41,13 +41,12 @@
 
 struct cmp_header {
 
-  unsigned hits : 20;
-
-  unsigned cnt : 20;
-  unsigned id : 16;
-
-  unsigned shape : 5;  // from 0 to 31
+  unsigned hits : 24;
+  unsigned id : 24;
+  unsigned shape : 5;
   unsigned type : 1;
+  unsigned attribute : 4;
+  unsigned reserved : 6;
 
 } __attribute__((packed));
 

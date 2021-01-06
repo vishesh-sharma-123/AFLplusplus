@@ -101,7 +101,8 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
 #else
   FunctionCallee
 #endif
-      c1 = M.getOrInsertFunction("__cmplog_ins_hook1", VoidTy, Int8Ty, Int8Ty
+      c1 = M.getOrInsertFunction("__cmplog_ins_hook1", VoidTy, Int8Ty, Int8Ty,
+                                 Int8Ty
 #if LLVM_VERSION_MAJOR < 5
                                  ,
                                  NULL
@@ -118,7 +119,8 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
 #else
   FunctionCallee
 #endif
-      c2 = M.getOrInsertFunction("__cmplog_ins_hook2", VoidTy, Int16Ty, Int16Ty
+      c2 = M.getOrInsertFunction("__cmplog_ins_hook2", VoidTy, Int16Ty, Int16Ty,
+                                 Int8Ty
 #if LLVM_VERSION_MAJOR < 5
                                  ,
                                  NULL
@@ -135,7 +137,8 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
 #else
   FunctionCallee
 #endif
-      c4 = M.getOrInsertFunction("__cmplog_ins_hook4", VoidTy, Int32Ty, Int32Ty
+      c4 = M.getOrInsertFunction("__cmplog_ins_hook4", VoidTy, Int32Ty, Int32Ty,
+                                 Int8Ty
 #if LLVM_VERSION_MAJOR < 5
                                  ,
                                  NULL
@@ -152,7 +155,8 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
 #else
   FunctionCallee
 #endif
-      c8 = M.getOrInsertFunction("__cmplog_ins_hook8", VoidTy, Int64Ty, Int64Ty
+      c8 = M.getOrInsertFunction("__cmplog_ins_hook8", VoidTy, Int64Ty, Int64Ty,
+                                 Int8Ty
 #if LLVM_VERSION_MAJOR < 5
                                  ,
                                  NULL
@@ -227,6 +231,7 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
     IntegerType *        intTyOp0 = NULL;
     IntegerType *        intTyOp1 = NULL;
     unsigned             max_size = 0;
+    unsigned char        attr = 0;
     std::vector<Value *> args;
 
     if (selectcmpInst->getOpcode() == Instruction::FCmp) {
@@ -234,9 +239,9 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
       auto ty0 = op0->getType();
       if (ty0->isHalfTy()
 #if LLVM_VERSION_MAJOR >= 11
-       || ty0->isBFloatTy()
+          || ty0->isBFloatTy()
 #endif
-       )
+      )
         max_size = 16;
       else if (ty0->isFloatTy())
         max_size = 32;
@@ -253,15 +258,16 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
         if (intTyOp0 && intTyOp1) {
 
           max_size = intTyOp0->getBitWidth() > intTyOp1->getBitWidth()
-                       ? intTyOp0->getBitWidth()
-                       : intTyOp1->getBitWidth();
+                         ? intTyOp0->getBitWidth()
+                         : intTyOp1->getBitWidth();
           args.push_back(V0);
           args.push_back(V1);
-          
+          attr += 8;
+
         } else {
-        
+
           max_size = 0;
-        
+
         }
 
       }
@@ -284,6 +290,51 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
     }
 
     if (max_size < 8 || max_size > 64 || !intTyOp0 || !intTyOp1) continue;
+
+    CmpInst *cmpInst = dyn_cast<CmpInst>(selectcmpInst);
+
+    if (cmpInst) switch (cmpInst->getPredicate()) {
+
+        case CmpInst::ICMP_NE:
+        case CmpInst::FCMP_UNE:
+        case CmpInst::FCMP_ONE:
+          break;
+        case CmpInst::ICMP_EQ:
+        case CmpInst::FCMP_UEQ:
+        case CmpInst::FCMP_OEQ:
+          attr += 1;
+          break;
+        case CmpInst::ICMP_UGT:
+        case CmpInst::ICMP_SGT:
+        case CmpInst::FCMP_OGT:
+        case CmpInst::FCMP_UGT:
+          attr += 2;
+          break;
+        case CmpInst::ICMP_ULT:
+        case CmpInst::ICMP_SLT:
+        case CmpInst::FCMP_OLT:
+        case CmpInst::FCMP_ULT:
+          attr += 4;
+          break;
+        case CmpInst::ICMP_UGE:
+        case CmpInst::ICMP_SGE:
+        case CmpInst::FCMP_OGE:
+        case CmpInst::FCMP_UGE:
+          attr += 3;
+          break;
+        case CmpInst::ICMP_ULE:
+        case CmpInst::ICMP_SLE:
+        case CmpInst::FCMP_OLE:
+        case CmpInst::FCMP_ULE:
+          attr += 5;
+          break;
+        default:
+          break;
+
+      }
+
+    ConstantInt *attribute = ConstantInt::get(Int8Ty, attr);
+    args.push_back(attribute);
 
     switch (max_size) {
 
