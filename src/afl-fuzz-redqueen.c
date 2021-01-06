@@ -569,8 +569,8 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   if (SHAPE_BYTES(h->shape) >= 4 && *status != 1) {
 
-    // if (its_len >= 4 && attr <= 1) fprintf(stderr, "TestU32: %u>=4 %x==%x
-    // %x==%x (idx=%u attr=%u) <= %x<-%x\n", its_len, *buf_32, pattern,
+    // if (its_len >= 4 && attr <= 1) fprintf(stderr, "TestU32: %u>=4 %x==%llx"
+    // " %x==%llx (idx=%u attr=%u) <= %llx<-%llx\n", its_len, *buf_32, pattern,
     // *o_buf_32, o_pattern, idx, attr, repl, changed_val);
 
     if (its_len >= 4 &&
@@ -583,6 +583,8 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
       *buf_32 = tmp_32;
 
     }
+
+    // fprintf(stderr, "Status=%u\n", *status);
 
     // reverse encoding
     if (do_reverse && *status != 1) {
@@ -661,8 +663,8 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
     } else if (SHAPE_BYTES(h->shape) == 8 && its_len >= 8) {
 
-      float *f = (float *)&repl;
-      float  g = *f;
+      double *f = (double *)&repl;
+      double  g = *f;
       g += 1.0;
 
       u64 *r = (u64 *)&g;
@@ -692,8 +694,8 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
     } else if (SHAPE_BYTES(h->shape) == 8) {
 
-      float *f = (float *)&repl;
-      float  g = *f;
+      double *f = (double *)&repl;
+      double  g = *f;
       g -= 1.0;
       u64 *r = (u64 *)&g;
       repl_new = *r;
