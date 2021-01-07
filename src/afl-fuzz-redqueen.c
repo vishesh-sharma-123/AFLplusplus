@@ -101,6 +101,21 @@ static void dump(char *txt, u8 *buf, u32 len) {
 
 }
 
+static void dump_file(char *path, char *name, u32 counter, u8 *buf, u32 len) {
+
+  char fn[4096];
+  if (!path) path = ".";
+  snprintf(fn, sizeof(fn), "%s/%s%d", path, name, counter);
+  int fd = open(fn, O_RDWR | O_CREAT | O_TRUNC, 0644);
+  if (fd >= 0) {
+
+    write(fd, buf, len);
+    close(fd);
+
+  }
+
+}
+
 #endif
 
 static u8 get_exec_checksum(afl_state_t *afl, u8 *buf, u32 len, u64 *cksum) {
@@ -557,7 +572,7 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
     if (its_len >= 8 && (attr == 0 || attr >= 8))
       // fprintf(stderr,
-      //         "TestU32: %u>=4 %x==%llx"
+      //         "TestU64: %u>=4 %x==%llx"
       //         " %x==%llx (idx=%u attr=%u) <= %llx<-%llx\n",
       //         its_len, *buf_32, pattern, *o_buf_32, o_pattern, idx, attr,
       //         repl, changed_val);
