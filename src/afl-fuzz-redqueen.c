@@ -90,6 +90,19 @@ static struct range *pop_biggest_range(struct range **ranges) {
 
 }
 
+#ifdef _DEBUG
+static void dump(char *txt, u8 *buf, u32 len) {
+
+  u32 i;
+  fprintf(stderr, "DUMP %s %llx ", txt, hash64(buf, len, 0));
+  for (i = 0; i < len; i++)
+    fprintf(stderr, "%02x", buf[i]);
+  fprintf(stderr, "\n");
+
+}
+
+#endif
+
 static u8 get_exec_checksum(afl_state_t *afl, u8 *buf, u32 len, u64 *cksum) {
 
   if (unlikely(common_fuzz_stuff(afl, buf, len))) { return 1; }
@@ -351,6 +364,7 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
   FILE *f = fopen(fn, "a");
   if (f) {
 
+    // FILE *f = stderr;
     fprintf(f,
             "Colorization: fname=%s len=%u result=%u execs=%u found=%llu "
             "taint=%u\n",
@@ -473,8 +487,11 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
   //  }
   //  not 100% but would have a chance to be detected
 
-  // fprintf(stderr, "Encode: %llx->%llx into %llx(<-%llx) at pos=%u (%u)\n",
-  // o_pattern, pattern, repl, changed_val, idx, attr);
+  // fprintf(stderr,
+  //         "Encode: %llx->%llx into %llx(<-%llx) at pos=%u "
+  //         "taint_len=%u shape=%u attr=%u\n",
+  //         o_pattern, pattern, repl, changed_val, idx, taint_len,
+  //         h->shape + 1, attr);
 
   u64 *buf_64 = (u64 *)&buf[idx];
   u32 *buf_32 = (u32 *)&buf[idx];
@@ -538,18 +555,27 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   if (SHAPE_BYTES(h->shape) >= 8 && *status != 1) {
 
-    // if this is an fcmp (attr & 8 == 8) then do not compare the patterns -
-    // due to a bug in llvm dynamic float bitcasts do not work :(
-    // the value 16 means this is a +- 1.0 test case
-    if (its_len >= 8 && (((attr & 8) == 8 || attr == 16 || attr == 0) ||
-                         (*buf_64 == pattern && *o_buf_64 == o_pattern))) {
+    if (its_len >= 8 && (attr == 0 || attr >= 8))
+      // fprintf(stderr,
+      //         "TestU32: %u>=4 %x==%llx"
+      //         " %x==%llx (idx=%u attr=%u) <= %llx<-%llx\n",
+      //         its_len, *buf_32, pattern, *o_buf_32, o_pattern, idx, attr,
+      //         repl, changed_val);
 
-      u64 tmp_64 = *buf_64;
-      *buf_64 = repl;
-      if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-      *buf_64 = tmp_64;
+      // if this is an fcmp (attr & 8 == 8) then do not compare the patterns -
+      // due to a bug in llvm dynamic float bitcasts do not work :(
+      // the value 16 means this is a +- 1.0 test case
+      if (its_len >= 8 && ((attr >= 8 || attr == 0) ||
+                           (*buf_64 == pattern && *o_buf_64 == o_pattern))) {
 
-    }
+        u64 tmp_64 = *buf_64;
+        *buf_64 = repl;
+        if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
+        *buf_64 = tmp_64;
+
+        // fprintf(stderr, "Status=%u\n", *status);
+
+      }
 
     // reverse encoding
     if (do_reverse && *status != 1) {
@@ -569,22 +595,25 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   if (SHAPE_BYTES(h->shape) >= 4 && *status != 1) {
 
-    // if (its_len >= 4 && attr <= 1) fprintf(stderr, "TestU32: %u>=4 %x==%llx"
-    // " %x==%llx (idx=%u attr=%u) <= %llx<-%llx\n", its_len, *buf_32, pattern,
-    // *o_buf_32, o_pattern, idx, attr, repl, changed_val);
+    if (its_len >= 4 && (attr <= 1 || attr >= 8))
+      // fprintf(stderr,
+      //         "TestU32: %u>=4 %x==%llx"
+      //         " %x==%llx (idx=%u attr=%u) <= %llx<-%llx\n",
+      //         its_len, *buf_32, pattern, *o_buf_32, o_pattern, idx, attr,
+      //         repl, changed_val);
 
-    if (its_len >= 4 &&
-        ((*buf_32 == (u32)pattern && *o_buf_32 == (u32)o_pattern) ||
-         ((attr & 8) == 8 || attr == 16 || attr == 0))) {
+      if (its_len >= 4 &&
+          ((*buf_32 == (u32)pattern && *o_buf_32 == (u32)o_pattern) ||
+           (attr >= 8 || attr == 0))) {
 
-      u32 tmp_32 = *buf_32;
-      *buf_32 = (u32)repl;
-      if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-      *buf_32 = tmp_32;
+        u32 tmp_32 = *buf_32;
+        *buf_32 = (u32)repl;
+        if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
+        *buf_32 = tmp_32;
 
-    }
+        // fprintf(stderr, "Status=%u\n", *status);
 
-    // fprintf(stderr, "Status=%u\n", *status);
+      }
 
     // reverse encoding
     if (do_reverse && *status != 1) {
@@ -631,8 +660,7 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   }
 
-  /* avoid CodeQL warning on unsigned overflow */
-  if (/* SHAPE_BYTES(h->shape) >= 1 && */ *status != 1) {
+  if (*status != 1) {  // u8
 
     if (its_len >= 1 &&
         ((*buf_8 == (u8)pattern && *o_buf_8 == (u8)o_pattern) || attr == 0)) {
@@ -676,6 +704,8 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
     }
 
+    changed_val = repl_new;
+
     if (unlikely(cmp_extend_encoding(afl, h, pattern, repl_new, o_pattern,
                                      changed_val, 16, idx, taint_len, orig_buf,
                                      buf, len, 0, status))) {
@@ -706,6 +736,8 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
     }
 
+    changed_val = repl_new;
+
     if (unlikely(cmp_extend_encoding(afl, h, pattern, repl_new, o_pattern,
                                      changed_val, 16, idx, taint_len, orig_buf,
                                      buf, len, 0, status))) {
@@ -714,11 +746,41 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
     }
 
+    // transform double to float, llvm likes to do that internally ...
+    if (SHAPE_BYTES(h->shape) == 8 && its_len >= 4) {
+
+      double *f = (double *)&repl;
+      float   g = (float)*f;
+      repl_new = 0;
+#if (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+      memcpy((char *)&repl_new, (char *)&g, 4);
+#else
+      memcpy(((char *)&repl_new) + 4, (char *)&g, 4);
+#endif
+      changed_val = repl_new;
+      h->shape = 3;  // modify shape
+
+      // fprintf(stderr, "DOUBLE2FLOAT %llx\n", repl_new);
+
+      if (unlikely(cmp_extend_encoding(afl, h, pattern, repl_new, o_pattern,
+                                       changed_val, 16, idx, taint_len,
+                                       orig_buf, buf, len, attr, status))) {
+
+        h->shape = 7;
+        return 1;
+
+      }
+
+      h->shape = 7;  // recover shape
+
+    }
+
   } else if (attr > 1 && attr < 8) {  // lesser/greater integer comparison
 
     u64 repl_new;
 
     repl_new = repl + 1;
+    changed_val = repl_new;
     if (unlikely(cmp_extend_encoding(afl, h, pattern, repl_new, o_pattern,
                                      changed_val, 0, idx, taint_len, orig_buf,
                                      buf, len, 0, status))) {
@@ -728,6 +790,7 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
     }
 
     repl_new = repl - 1;
+    changed_val = repl_new;
     if (unlikely(cmp_extend_encoding(afl, h, pattern, repl_new, o_pattern,
                                      changed_val, 0, idx, taint_len, orig_buf,
                                      buf, len, 0, status))) {
@@ -1271,6 +1334,21 @@ exit_its:
   new_hit_cnt = afl->queued_paths + afl->unique_crashes;
   afl->stage_finds[STAGE_ITS] += new_hit_cnt - orig_hit_cnt;
   afl->stage_cycles[STAGE_ITS] += afl->fsrv.total_execs - orig_execs;
+
+  if (taint) {
+
+    struct tainted *t = taint;
+    while (taint->next) {
+
+      t = taint->next;
+      ck_free(taint);
+      taint = t;
+
+    }
+
+    ck_free(taint);
+
+  }
 
   memcpy(buf, orig_buf, len);
 
