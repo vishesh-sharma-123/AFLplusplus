@@ -570,7 +570,7 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   if (SHAPE_BYTES(h->shape) >= 8 && *status != 1) {
 
-    //if (its_len >= 8 && (attr == 0 || attr >= 8))
+    // if (its_len >= 8 && (attr == 0 || attr >= 8))
     // fprintf(stderr,
     //         "TestU64: %u>=4 %x==%llx"
     //         " %x==%llx (idx=%u attr=%u) <= %llx<-%llx\n",
@@ -610,25 +610,25 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   if (SHAPE_BYTES(h->shape) >= 4 && *status != 1) {
 
-    if (its_len >= 4 && (attr <= 1 || attr >= 8))
-      // fprintf(stderr,
-      //         "TestU32: %u>=4 %x==%llx"
-      //         " %x==%llx (idx=%u attr=%u) <= %llx<-%llx\n",
-      //         its_len, *buf_32, pattern, *o_buf_32, o_pattern, idx, attr,
-      //         repl, changed_val);
+    // if (its_len >= 4 && (attr <= 1 || attr >= 8))
+    // fprintf(stderr,
+    //         "TestU32: %u>=4 %x==%llx"
+    //         " %x==%llx (idx=%u attr=%u) <= %llx<-%llx\n",
+    //         its_len, *buf_32, pattern, *o_buf_32, o_pattern, idx, attr,
+    //         repl, changed_val);
 
-      if (its_len >= 4 &&
-          ((*buf_32 == (u32)pattern && *o_buf_32 == (u32)o_pattern) ||
-           (attr >= 8 || attr == 0))) {
+    if (its_len >= 4 &&
+        ((*buf_32 == (u32)pattern && *o_buf_32 == (u32)o_pattern) ||
+         (attr >= 8 || attr == 0))) {
 
-        u32 tmp_32 = *buf_32;
-        *buf_32 = (u32)repl;
-        if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-        *buf_32 = tmp_32;
+      u32 tmp_32 = *buf_32;
+      *buf_32 = (u32)repl;
+      if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
+      *buf_32 = tmp_32;
 
-        // fprintf(stderr, "Status=%u\n", *status);
+      // fprintf(stderr, "Status=%u\n", *status);
 
-      }
+    }
 
     // reverse encoding
     if (do_reverse && *status != 1) {
