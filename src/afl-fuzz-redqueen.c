@@ -570,27 +570,27 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   if (SHAPE_BYTES(h->shape) >= 8 && *status != 1) {
 
-    if (its_len >= 8 && (attr == 0 || attr >= 8))
-      // fprintf(stderr,
-      //         "TestU64: %u>=4 %x==%llx"
-      //         " %x==%llx (idx=%u attr=%u) <= %llx<-%llx\n",
-      //         its_len, *buf_32, pattern, *o_buf_32, o_pattern, idx, attr,
-      //         repl, changed_val);
+    //if (its_len >= 8 && (attr == 0 || attr >= 8))
+    // fprintf(stderr,
+    //         "TestU64: %u>=4 %x==%llx"
+    //         " %x==%llx (idx=%u attr=%u) <= %llx<-%llx\n",
+    //         its_len, *buf_32, pattern, *o_buf_32, o_pattern, idx, attr,
+    //         repl, changed_val);
 
-      // if this is an fcmp (attr & 8 == 8) then do not compare the patterns -
-      // due to a bug in llvm dynamic float bitcasts do not work :(
-      // the value 16 means this is a +- 1.0 test case
-      if (its_len >= 8 && ((attr >= 8 || attr == 0) ||
-                           (*buf_64 == pattern && *o_buf_64 == o_pattern))) {
+    // if this is an fcmp (attr & 8 == 8) then do not compare the patterns -
+    // due to a bug in llvm dynamic float bitcasts do not work :(
+    // the value 16 means this is a +- 1.0 test case
+    if (its_len >= 8 && ((attr >= 8 || attr == 0) ||
+                         (*buf_64 == pattern && *o_buf_64 == o_pattern))) {
 
-        u64 tmp_64 = *buf_64;
-        *buf_64 = repl;
-        if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-        *buf_64 = tmp_64;
+      u64 tmp_64 = *buf_64;
+      *buf_64 = repl;
+      if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
+      *buf_64 = tmp_64;
 
-        // fprintf(stderr, "Status=%u\n", *status);
+      // fprintf(stderr, "Status=%u\n", *status);
 
-      }
+    }
 
     // reverse encoding
     if (do_reverse && *status != 1) {
