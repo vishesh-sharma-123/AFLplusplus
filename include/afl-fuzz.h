@@ -158,7 +158,7 @@ struct queue_entry {
       var_behavior,                     /* Variable behavior?               */
       favored,                          /* Currently favored?               */
       fs_redundant,                     /* Marked as redundant in the fs?   */
-      fully_colorized,                  /* Do not run redqueen stage again  */
+      colorized,                        /* Do not run redqueen stage again  */
       is_ascii,                         /* Is the input just ascii text?    */
       disabled;                         /* Is disabled from fuzz selection  */
 
@@ -183,7 +183,8 @@ struct queue_entry {
 
   u8 *testcase_buf;                     /* The testcase buffer, if loaded.  */
 
-  struct queue_entry *next;             /* Next element, if any             */
+  struct queue_entry *mother,           /* queue entry this based on        */
+      *next;                            /* Next element, if any             */
 
 };
 
@@ -636,6 +637,8 @@ typedef struct afl_state {
   /* cmplog forkserver ids */
   s32 cmplog_fsrv_ctl_fd, cmplog_fsrv_st_fd;
   u32 cmplog_prev_timed_out;
+  u32 cmplog_max_filesize;
+  u32 cmplog_lvl;
 
   struct afl_pass_stat *pass_stats;
   struct cmp_map *      orig_cmp_map;

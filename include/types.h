@@ -26,9 +26,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-typedef uint8_t  u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
+typedef uint8_t           u8;
+typedef uint16_t          u16;
+typedef uint32_t          u32;
+typedef unsigned __int128 uint128_t;
+typedef uint128_t         u128;
 
 /* Extended forkserver option values */
 
@@ -57,10 +59,12 @@ typedef uint32_t u32;
 
 typedef unsigned long long u64;
 
-typedef int8_t  s8;
-typedef int16_t s16;
-typedef int32_t s32;
-typedef int64_t s64;
+typedef int8_t   s8;
+typedef int16_t  s16;
+typedef int32_t  s32;
+typedef int64_t  s64;
+typedef __int128 int128_t;
+typedef int128_t s128;
 
 #ifndef MIN
   #define MIN(a, b)           \
@@ -112,6 +116,19 @@ typedef int64_t s64;
         (_ret & 0x00FF00FF00FF00FF) << 8 | (_ret & 0xFF00FF00FF00FF00) >> 8;   \
     _ret;                                                                      \
                                                                                \
+  })
+
+// It is impossible to define 128 bit constants, so ...
+#define SWAP128(_x)                              \
+  ({                                             \
+                                                 \
+    u128  _res = (_x), _ret;                     \
+    char *d = (char *)&_ret, *s = (char *)&_res; \
+    int   i;                                     \
+    for (i = 0; i < 16; i++)                     \
+      d[15 - i] = s[i];                          \
+    (u128) _ret;                                 \
+                                                 \
   })
 
 #ifdef AFL_LLVM_PASS

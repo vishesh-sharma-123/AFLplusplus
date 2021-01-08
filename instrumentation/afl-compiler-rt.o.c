@@ -1232,8 +1232,10 @@ void __cmplog_ins_hook16(uint128_t arg1, uint128_t arg2, uint8_t attr) {
   __afl_cmp_map->headers[k].shape = 15;
 
   hits &= CMP_MAP_H - 1;
-  __afl_cmp_map->log[k][hits].v0 = arg1;
-  __afl_cmp_map->log[k][hits].v1 = arg2;
+  __afl_cmp_map->log[k][hits].v0 = (u64)arg1;
+  __afl_cmp_map->log[k][hits].v1 = (u64)arg2;
+  __afl_cmp_map->log[k][hits].v0_128 = (u64)(arg1 >> 64);
+  __afl_cmp_map->log[k][hits].v1_128 = (u64)(arg2 >> 64);
 
 }
 

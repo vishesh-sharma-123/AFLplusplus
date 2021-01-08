@@ -54,6 +54,8 @@ struct cmp_operands {
 
   u64 v0;
   u64 v1;
+  u64 v0_128;
+  u64 v1_128;
 
 };
 

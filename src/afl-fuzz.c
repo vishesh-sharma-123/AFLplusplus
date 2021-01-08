@@ -1621,6 +1621,14 @@ int main(int argc, char **argv_orig, char **envp) {
         if (afl->use_splicing) {
 
           ++afl->cycles_wo_finds;
+
+          if (unlikely(afl->shm.cmplog_mode &&
+                       afl->cmplog_max_filesize < MAX_FILE)) {
+
+            afl->cmplog_max_filesize = (afl->cmplog_max_filesize << 4);
+
+          }
+
           switch (afl->expand_havoc) {
 
             case 0:
