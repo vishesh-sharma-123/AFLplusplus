@@ -219,7 +219,7 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
 
   afl->stage_name = "colorization";
   afl->stage_short = "colorization";
-  afl->stage_max = (len << 1);
+  afl->stage_max = MIN(len << 1, 175000);
 
   afl->stage_cur = 0;
   memcpy(backup, buf, len);

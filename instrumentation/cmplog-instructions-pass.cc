@@ -95,6 +95,7 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
   IntegerType *Int16Ty = IntegerType::getInt16Ty(C);
   IntegerType *Int32Ty = IntegerType::getInt32Ty(C);
   IntegerType *Int64Ty = IntegerType::getInt64Ty(C);
+  IntegerType *Int128Ty = IntegerType::getInt128Ty(C);
 
 #if LLVM_VERSION_MAJOR < 9
   Constant *
@@ -168,6 +169,24 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
   FunctionCallee cmplogHookIns8 = c8;
 #endif
 
+#if LLVM_VERSION_MAJOR < 9
+  Constant *
+#else
+  FunctionCallee
+#endif
+      c16 = M.getOrInsertFunction("__cmplog_ins_hook16", VoidTy, Int128Ty,
+                                  Int128Ty, Int8Ty
+#if LLVM_VERSION_MAJOR < 5
+                                  ,
+                                  NULL
+#endif
+      );
+#if LLVM_VERSION_MAJOR < 9
+  Function *cmplogHookIns16 = cast<Function>(c16);
+#else
+  FunctionCallee cmplogHookIns16 = c16;
+#endif
+
   /* iterate over all functions, bbs and instruction and add suitable calls */
   for (auto &F : M) {
 
@@ -232,7 +251,7 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
     IntegerType *        intTyOp1 = NULL;
     unsigned             max_size = 0;
     unsigned char        attr = 0;
-    std::vector<Value *> args;
+    std::vector<Value *> args, args2;
 
     if (selectcmpInst->getOpcode() == Instruction::FCmp) {
 
@@ -282,6 +301,7 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
         max_size = intTyOp0->getBitWidth() > intTyOp1->getBitWidth()
                        ? intTyOp0->getBitWidth()
                        : intTyOp1->getBitWidth();
+
         args.push_back(op0);
         args.push_back(op1);
 
@@ -289,7 +309,23 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
 
     }
 
-    if (max_size < 8 || max_size > 64 || !intTyOp0 || !intTyOp1) continue;
+    if (!intTyOp0 || !intTyOp1) continue;
+
+    switch (max_size) {
+
+      case 8:
+      case 16:
+      case 32:
+      case 64:
+      case 128:
+        break;
+      default:
+        if (!be_quiet)
+          fprintf(stderr, "Cannot handle this compare bit size: %u\n",
+                  max_size);
+        continue;
+
+    }
 
     CmpInst *cmpInst = dyn_cast<CmpInst>(selectcmpInst);
 
@@ -349,6 +385,9 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
         break;
       case 64:
         IRB.CreateCall(cmplogHookIns8, args);
+        break;
+      case 128:
+        IRB.CreateCall(cmplogHookIns16, args2);
         break;
       default:
         break;

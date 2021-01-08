@@ -1214,16 +1214,41 @@ void __cmplog_ins_hook8(uint64_t arg1, uint64_t arg2, uint8_t attr) {
 
 }
 
+typedef unsigned __int128 uint128_t;
+void __cmplog_ins_hook16(uint128_t arg1, uint128_t arg2, uint8_t attr) {
+
+  if (unlikely(!__afl_cmp_map)) return;
+
+  uintptr_t k = (uintptr_t)__builtin_return_address(0);
+  k = (k >> 4) ^ (k << 8);
+  k &= CMP_MAP_W - 1;
+
+  __afl_cmp_map->headers[k].type = CMP_TYPE_INS;
+  __afl_cmp_map->headers[k].attribute = attr;
+
+  u32 hits = __afl_cmp_map->headers[k].hits;
+  __afl_cmp_map->headers[k].hits = hits + 1;
+
+  __afl_cmp_map->headers[k].shape = 15;
+
+  hits &= CMP_MAP_H - 1;
+  __afl_cmp_map->log[k][hits].v0 = arg1;
+  __afl_cmp_map->log[k][hits].v1 = arg2;
+
+}
+
 #if defined(__APPLE__)
   #pragma weak __sanitizer_cov_trace_const_cmp1 = __cmplog_ins_hook1
   #pragma weak __sanitizer_cov_trace_const_cmp2 = __cmplog_ins_hook2
   #pragma weak __sanitizer_cov_trace_const_cmp4 = __cmplog_ins_hook4
   #pragma weak __sanitizer_cov_trace_const_cmp8 = __cmplog_ins_hook8
+  #pragma weak __sanitizer_cov_trace_const_cmp16 = __cmplog_ins_hook16
 
   #pragma weak __sanitizer_cov_trace_cmp1 = __cmplog_ins_hook1
   #pragma weak __sanitizer_cov_trace_cmp2 = __cmplog_ins_hook2
   #pragma weak __sanitizer_cov_trace_cmp4 = __cmplog_ins_hook4
   #pragma weak __sanitizer_cov_trace_cmp8 = __cmplog_ins_hook8
+  #pragma weak __sanitizer_cov_trace_cmp16 = __cmplog_ins_hook16
 #else
 void __sanitizer_cov_trace_const_cmp1(uint8_t arg1, uint8_t arg2, uint8_t attr)
     __attribute__((alias("__cmplog_ins_hook1")));
@@ -1236,6 +1261,9 @@ void __sanitizer_cov_trace_const_cmp4(uint32_t arg1, uint32_t arg2,
 void __sanitizer_cov_trace_const_cmp8(uint64_t arg1, uint64_t arg2,
                                       uint8_t attr)
     __attribute__((alias("__cmplog_ins_hook8")));
+void __sanitizer_cov_trace_const_cmp16(uint128_t arg1, uint128_t arg2,
+                                       uint8_t attr)
+    __attribute__((alias("__cmplog_ins_hook16")));
 
 void __sanitizer_cov_trace_cmp1(uint8_t arg1, uint8_t arg2)
     __attribute__((alias("__cmplog_ins_hook1")));
@@ -1245,6 +1273,8 @@ void __sanitizer_cov_trace_cmp4(uint32_t arg1, uint32_t arg2)
     __attribute__((alias("__cmplog_ins_hook4")));
 void __sanitizer_cov_trace_cmp8(uint64_t arg1, uint64_t arg2)
     __attribute__((alias("__cmplog_ins_hook8")));
+void __sanitizer_cov_trace_cmp16(uint128_t arg1, uint128_t arg2)
+    __attribute__((alias("__cmplog_ins_hook16")));
 #endif                                                /* defined(__APPLE__) */
 
 void __sanitizer_cov_trace_switch(uint64_t val, uint64_t *cases) {

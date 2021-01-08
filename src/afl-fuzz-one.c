@@ -547,7 +547,7 @@ u8 fuzz_one_original(afl_state_t *afl) {
 
   if (unlikely(perf_score <= 0)) { goto abandon_entry; }
 
-  if (unlikely(afl->shm.cmplog_mode && !afl->queue_cur->fully_colorized)) {
+  if (unlikely(afl->shm.cmplog_mode && !afl->queue_cur->fully_colorized && len >= 4 && len < 100000)) {
 
     if (input_to_state_stage(afl, in_buf, out_buf, len,
                              afl->queue_cur->exec_cksum)) {
@@ -2954,7 +2954,7 @@ static u8 mopt_common_fuzzing(afl_state_t *afl, MOpt_globals_t MOpt_globals) {
 
   if (unlikely(perf_score <= 0)) { goto abandon_entry; }
 
-  if (unlikely(afl->shm.cmplog_mode && !afl->queue_cur->fully_colorized)) {
+  if (unlikely(afl->shm.cmplog_mode && !afl->queue_cur->fully_colorized && len >= 4 && len < 100000)) {
 
     if (input_to_state_stage(afl, in_buf, out_buf, len,
                              afl->queue_cur->exec_cksum)) {
