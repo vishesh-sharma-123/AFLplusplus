@@ -40,15 +40,6 @@ struct range {
 
 };
 
-struct tainted {
-
-  u32             pos;
-  u32             len;
-  struct tainted *next;
-  struct tainted *prev;
-
-};
-
 static struct range *add_range(struct range *ranges, u32 start, u32 end) {
 
   struct range *r = ck_alloc_nozero(sizeof(struct range));
@@ -511,166 +502,184 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
   unsigned long long unum;
   long long          num;
 
-  if (afl->queue_cur->is_ascii) {
+  u32 do_lvl1 = 0, do_lvl2 = 0, do_lvl3 = 0;
+  u32 cmplog_done = afl->queue_cur->colorized, cmplog_lvl = afl->cmplog_lvl;
 
-    endptr = buf_8;
-    if (strntoll(buf_8, len - idx, (char **)&endptr, 0, &num)) {
+  if (!cmplog_done) { do_lvl1 = 1; }
+  if (cmplog_lvl >= 2 && cmplog_done < 2) { do_lvl2 = 2; }
+  if (cmplog_lvl >= 3 && cmplog_done < 3) { do_lvl3 = 3; }
 
-      if (!strntoull(buf_8, len - idx, (char **)&endptr, 0, &unum))
-        use_unum = 1;
+  // FCmp only in lvl2
+  if ((attr & 8) && !do_lvl2) { return 0; }
 
-    } else
+  if (do_lvl2) {
 
-      use_num = 1;
+    if (afl->queue_cur->is_ascii) {
 
-  }
+      endptr = buf_8;
+      if (strntoll(buf_8, len - idx, (char **)&endptr, 0, &num)) {
 
-  if (use_num && (u64)num == pattern) {
+        if (!strntoull(buf_8, len - idx, (char **)&endptr, 0, &unum))
+          use_unum = 1;
 
-    size_t old_len = endptr - buf_8;
-    size_t num_len = snprintf(NULL, 0, "%lld", num);
+      } else
 
-    u8 *new_buf = afl_realloc((void **)&afl->out_scratch_buf, len + num_len);
-    if (unlikely(!new_buf)) { PFATAL("alloc"); }
-    memcpy(new_buf, buf, idx);
-
-    snprintf(new_buf + idx, num_len, "%lld", num);
-    memcpy(new_buf + idx + num_len, buf_8 + old_len, len - idx - old_len);
-
-    if (unlikely(its_fuzz(afl, new_buf, len, status))) { return 1; }
-
-  } else if (use_unum && unum == pattern) {
-
-    size_t old_len = endptr - buf_8;
-    size_t num_len = snprintf(NULL, 0, "%llu", unum);
-
-    u8 *new_buf = afl_realloc((void **)&afl->out_scratch_buf, len + num_len);
-    if (unlikely(!new_buf)) { PFATAL("alloc"); }
-    memcpy(new_buf, buf, idx);
-
-    snprintf(new_buf + idx, num_len, "%llu", unum);
-    memcpy(new_buf + idx + num_len, buf_8 + old_len, len - idx - old_len);
-
-    if (unlikely(its_fuzz(afl, new_buf, len, status))) { return 1; }
-
-  }
-
-  if (SHAPE_BYTES(h->shape) >= 8 && *status != 1) {
-
-    // if (its_len >= 8 && (attr == 0 || attr >= 8))
-    // fprintf(stderr,
-    //         "TestU64: %u>=4 %x==%llx"
-    //         " %x==%llx (idx=%u attr=%u) <= %llx<-%llx\n",
-    //         its_len, *buf_32, pattern, *o_buf_32, o_pattern, idx, attr,
-    //         repl, changed_val);
-
-    // if this is an fcmp (attr & 8 == 8) then do not compare the patterns -
-    // due to a bug in llvm dynamic float bitcasts do not work :(
-    // the value 16 means this is a +- 1.0 test case
-    if (its_len >= 8 && ((attr >= 8 || attr == 0) ||
-                         (*buf_64 == pattern && *o_buf_64 == o_pattern))) {
-
-      u64 tmp_64 = *buf_64;
-      *buf_64 = repl;
-      if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-      *buf_64 = tmp_64;
-
-      // fprintf(stderr, "Status=%u\n", *status);
+        use_num = 1;
 
     }
 
-    // reverse encoding
-    if (do_reverse && *status != 1) {
+    if (use_num && (u64)num == pattern) {
 
-      if (unlikely(cmp_extend_encoding(afl, h, SWAP64(pattern), SWAP64(repl),
-                                       SWAP64(o_pattern), SWAP64(changed_val),
-                                       attr, idx, taint_len, orig_buf, buf, len,
-                                       0, status))) {
+      size_t old_len = endptr - buf_8;
+      size_t num_len = snprintf(NULL, 0, "%lld", num);
 
-        return 1;
+      u8 *new_buf = afl_realloc((void **)&afl->out_scratch_buf, len + num_len);
+      if (unlikely(!new_buf)) { PFATAL("alloc"); }
+      memcpy(new_buf, buf, idx);
+
+      snprintf(new_buf + idx, num_len, "%lld", num);
+      memcpy(new_buf + idx + num_len, buf_8 + old_len, len - idx - old_len);
+
+      if (unlikely(its_fuzz(afl, new_buf, len, status))) { return 1; }
+
+    } else if (use_unum && unum == pattern) {
+
+      size_t old_len = endptr - buf_8;
+      size_t num_len = snprintf(NULL, 0, "%llu", unum);
+
+      u8 *new_buf = afl_realloc((void **)&afl->out_scratch_buf, len + num_len);
+      if (unlikely(!new_buf)) { PFATAL("alloc"); }
+      memcpy(new_buf, buf, idx);
+
+      snprintf(new_buf + idx, num_len, "%llu", unum);
+      memcpy(new_buf + idx + num_len, buf_8 + old_len, len - idx - old_len);
+
+      if (unlikely(its_fuzz(afl, new_buf, len, status))) { return 1; }
+
+    }
+
+  }
+
+  if (do_lvl1 || (do_lvl2 && (attr & 8)) || !attr) {
+
+    if (SHAPE_BYTES(h->shape) >= 8 && *status != 1) {
+
+      // if (its_len >= 8 && (attr == 0 || attr >= 8))
+      // fprintf(stderr,
+      //         "TestU64: %u>=4 %x==%llx"
+      //         " %x==%llx (idx=%u attr=%u) <= %llx<-%llx\n",
+      //         its_len, *buf_32, pattern, *o_buf_32, o_pattern, idx, attr,
+      //         repl, changed_val);
+
+      // if this is an fcmp (attr & 8 == 8) then do not compare the patterns -
+      // due to a bug in llvm dynamic float bitcasts do not work :(
+      // the value 16 means this is a +- 1.0 test case
+      if (its_len >= 8 && ((attr >= 8 || attr == 0) ||
+                           (*buf_64 == pattern && *o_buf_64 == o_pattern))) {
+
+        u64 tmp_64 = *buf_64;
+        *buf_64 = repl;
+        if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
+        *buf_64 = tmp_64;
+
+        // fprintf(stderr, "Status=%u\n", *status);
+
+      }
+
+      // reverse encoding
+      if (do_reverse && *status != 1) {
+
+        if (unlikely(cmp_extend_encoding(afl, h, SWAP64(pattern), SWAP64(repl),
+                                         SWAP64(o_pattern), SWAP64(changed_val),
+                                         attr, idx, taint_len, orig_buf, buf,
+                                         len, 0, status))) {
+
+          return 1;
+
+        }
 
       }
 
     }
 
-  }
+    if (SHAPE_BYTES(h->shape) >= 4 && *status != 1) {
 
-  if (SHAPE_BYTES(h->shape) >= 4 && *status != 1) {
+      // if (its_len >= 4 && (attr <= 1 || attr >= 8))
+      // fprintf(stderr,
+      //         "TestU32: %u>=4 %x==%llx"
+      //         " %x==%llx (idx=%u attr=%u) <= %llx<-%llx\n",
+      //         its_len, *buf_32, pattern, *o_buf_32, o_pattern, idx, attr,
+      //         repl, changed_val);
 
-    // if (its_len >= 4 && (attr <= 1 || attr >= 8))
-    // fprintf(stderr,
-    //         "TestU32: %u>=4 %x==%llx"
-    //         " %x==%llx (idx=%u attr=%u) <= %llx<-%llx\n",
-    //         its_len, *buf_32, pattern, *o_buf_32, o_pattern, idx, attr,
-    //         repl, changed_val);
+      if (its_len >= 4 &&
+          ((*buf_32 == (u32)pattern && *o_buf_32 == (u32)o_pattern) ||
+           (attr >= 8 || attr == 0))) {
 
-    if (its_len >= 4 &&
-        ((*buf_32 == (u32)pattern && *o_buf_32 == (u32)o_pattern) ||
-         (attr >= 8 || attr == 0))) {
+        u32 tmp_32 = *buf_32;
+        *buf_32 = (u32)repl;
+        if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
+        *buf_32 = tmp_32;
 
-      u32 tmp_32 = *buf_32;
-      *buf_32 = (u32)repl;
-      if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-      *buf_32 = tmp_32;
+        // fprintf(stderr, "Status=%u\n", *status);
 
-      // fprintf(stderr, "Status=%u\n", *status);
+      }
 
-    }
+      // reverse encoding
+      if (do_reverse && *status != 1) {
 
-    // reverse encoding
-    if (do_reverse && *status != 1) {
+        if (unlikely(cmp_extend_encoding(afl, h, SWAP32(pattern), SWAP32(repl),
+                                         SWAP32(o_pattern), SWAP32(changed_val),
+                                         attr, idx, taint_len, orig_buf, buf,
+                                         len, 0, status))) {
 
-      if (unlikely(cmp_extend_encoding(afl, h, SWAP32(pattern), SWAP32(repl),
-                                       SWAP32(o_pattern), SWAP32(changed_val),
-                                       attr, idx, taint_len, orig_buf, buf, len,
-                                       0, status))) {
+          return 1;
 
-        return 1;
+        }
 
       }
 
     }
 
-  }
+    if (SHAPE_BYTES(h->shape) >= 2 && *status != 1) {
 
-  if (SHAPE_BYTES(h->shape) >= 2 && *status != 1) {
+      if (its_len >= 2 &&
+          ((*buf_16 == (u16)pattern && *o_buf_16 == (u16)o_pattern) ||
+           attr == 0)) {
 
-    if (its_len >= 2 &&
-        ((*buf_16 == (u16)pattern && *o_buf_16 == (u16)o_pattern) ||
-         attr == 0)) {
+        u16 tmp_16 = *buf_16;
+        *buf_16 = (u16)repl;
+        if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
+        *buf_16 = tmp_16;
 
-      u16 tmp_16 = *buf_16;
-      *buf_16 = (u16)repl;
-      if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-      *buf_16 = tmp_16;
+      }
 
-    }
+      // reverse encoding
+      if (do_reverse && *status != 1) {
 
-    // reverse encoding
-    if (do_reverse && *status != 1) {
+        if (unlikely(cmp_extend_encoding(afl, h, SWAP16(pattern), SWAP16(repl),
+                                         SWAP16(o_pattern), SWAP16(changed_val),
+                                         attr, idx, taint_len, orig_buf, buf,
+                                         len, 0, status))) {
 
-      if (unlikely(cmp_extend_encoding(afl, h, SWAP16(pattern), SWAP16(repl),
-                                       SWAP16(o_pattern), SWAP16(changed_val),
-                                       attr, idx, taint_len, orig_buf, buf, len,
-                                       0, status))) {
+          return 1;
 
-        return 1;
+        }
 
       }
 
     }
 
-  }
+    if (*status != 1) {  // u8
 
-  if (*status != 1) {  // u8
+      if (its_len >= 1 &&
+          ((*buf_8 == (u8)pattern && *o_buf_8 == (u8)o_pattern) || attr == 0)) {
 
-    if (its_len >= 1 &&
-        ((*buf_8 == (u8)pattern && *o_buf_8 == (u8)o_pattern) || attr == 0)) {
+        u8 tmp_8 = *buf_8;
+        *buf_8 = (u8)repl;
+        if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
+        *buf_8 = tmp_8;
 
-      u8 tmp_8 = *buf_8;
-      *buf_8 = (u8)repl;
-      if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
-      *buf_8 = tmp_8;
+      }
 
     }
 
@@ -679,6 +688,8 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
   // here we add and subract 1 from the value, but only if it is not an
   // == or != comparison
   // Bits: 1 = Equal, 2 = Greater, 3 = Lesser, 4 = Float
+
+  if (!do_lvl3) { return 0; }
 
   if (attr > 9 && attr < 16) {  // lesser/greater integer comparison
 
@@ -911,6 +922,48 @@ static void try_to_add_to_dict(afl_state_t *afl, u64 v, u8 shape) {
 
 }
 
+static void try_to_add_to_dict128(afl_state_t *afl, u128 v) {
+
+  u8 *b = (u8 *)&v;
+
+  u32 k;
+  u8  cons_ff = 0, cons_0 = 0;
+  for (k = 0; k < 16; ++k) {
+
+    if (b[k] == 0) {
+
+      ++cons_0;
+
+    } else if (b[k] == 0xff) {
+
+      ++cons_0;
+
+    } else {
+
+      cons_0 = cons_ff = 0;
+
+    }
+
+    // too many uninteresting values? try adding 2 64-bit values
+    if (cons_0 > 6 || cons_ff > 6) {
+
+      u64 v64 = (u64)v;
+      try_to_add_to_dict(afl, v64, 8);
+      v64 = (u64)(v >> 64);
+      try_to_add_to_dict(afl, v64, 8);
+
+      return;
+
+    }
+
+  }
+
+  maybe_add_auto(afl, (u8 *)&v, 16);
+  u128 rev = SWAP128(v);
+  maybe_add_auto(afl, (u8 *)&rev, 16);
+
+}
+
 static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
                    struct tainted *taint) {
 
@@ -1136,8 +1189,17 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
       if (afl->pass_stats[key].total == 0) {
 
-        try_to_add_to_dict(afl, o->v0, SHAPE_BYTES(h->shape));
-        try_to_add_to_dict(afl, o->v1, SHAPE_BYTES(h->shape));
+        if (SHAPE_BYTES(h->shape) == 16) {
+
+          try_to_add_to_dict128(afl, o->v0);
+          try_to_add_to_dict128(afl, o->v1);
+
+        } else {
+
+          try_to_add_to_dict(afl, o->v0, SHAPE_BYTES(h->shape));
+          try_to_add_to_dict(afl, o->v1, SHAPE_BYTES(h->shape));
+
+        }
 
       }
 
@@ -1373,7 +1435,11 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
 
   struct tainted *taint = NULL;
 
-  if (unlikely(colorization(afl, buf, len, exec_cksum, &taint))) { return 1; }
+  if (!afl->queue_cur->taint) {
+
+    if (unlikely(colorization(afl, buf, len, exec_cksum, &taint))) { return 1; }
+
+  }
 
   struct tainted *t = taint;
   while (t) {
@@ -1452,25 +1518,11 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
   r = 0;
 
 exit_its:
+
+  afl->queue_cur->taint = taint;
   new_hit_cnt = afl->queued_paths + afl->unique_crashes;
   afl->stage_finds[STAGE_ITS] += new_hit_cnt - orig_hit_cnt;
   afl->stage_cycles[STAGE_ITS] += afl->fsrv.total_execs - orig_execs;
-
-  if (taint) {
-
-    struct tainted *t = taint;
-    while (taint->next) {
-
-      t = taint->next;
-      ck_free(taint);
-      taint = t;
-
-    }
-
-    ck_free(taint);
-
-  }
-
   memcpy(buf, orig_buf, len);
 
   return r;

@@ -145,6 +145,15 @@ extern s16 interesting_16[INTERESTING_8_LEN + INTERESTING_16_LEN];
 extern s32
     interesting_32[INTERESTING_8_LEN + INTERESTING_16_LEN + INTERESTING_32_LEN];
 
+struct tainted {
+
+  u32             pos;
+  u32             len;
+  struct tainted *next;
+  struct tainted *prev;
+
+};
+
 struct queue_entry {
 
   u8 *fname;                            /* File name for the test case      */
@@ -182,6 +191,8 @@ struct queue_entry {
       weight;
 
   u8 *testcase_buf;                     /* The testcase buffer, if loaded.  */
+
+  struct tainted *taint;                /* Taint information from CmpLog    */
 
   struct queue_entry *mother,           /* queue entry this based on        */
       *next;                            /* Next element, if any             */

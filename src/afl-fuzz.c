@@ -116,7 +116,9 @@ static void usage(u8 *argv0, int more_help) {
       "                  See docs/README.MOpt.md\n"
       "  -c program    - enable CmpLog by specifying a binary compiled for "
       "it.\n"
-      "                  if using QEMU, just use -c 0.\n\n"
+      "                  if using QEMU, just use -c 0.\n"
+      "  -l cmplog_level - set the complexity/intensivity of CmpLog.\n"
+      "                  Values: 1 (default), 2 (intensive) and 3 (heavy)\n\n"
 
       "Fuzzing behavior settings:\n"
       "  -Z            - sequential queue selection instead of weighted "
@@ -347,7 +349,8 @@ int main(int argc, char **argv_orig, char **envp) {
 
   while ((opt = getopt(
               argc, argv,
-              "+b:c:i:I:o:f:F:m:t:T:dDnCB:S:M:x:QNUWe:p:s:V:E:L:hRP:Z")) > 0) {
+              "+b:B:c:CdDe:E:hi:I:f:F:l:L:m:M:nNo:p:P:RQs:S:t:T:UV:Wx:Z")) >
+         0) {
 
     switch (opt) {
 
@@ -773,6 +776,21 @@ int main(int argc, char **argv_orig, char **envp) {
           FATAL("Bad syntax used for -E");
 
         }
+
+      } break;
+
+      case 'l': {
+
+        afl->cmplog_lvl = atoi(optarg);
+        if (afl->cmplog_lvl < 1 || afl->cmplog_lvl > 3) {
+
+          FATAL(
+              "Bad complog level value, accepted values are 1 (default), 2 and "
+              "3.");
+
+        }
+
+        if (afl->cmplog_lvl == 3) { afl->cmplog_max_filesize = MAX_FILE; }
 
       } break;
 
@@ -1646,6 +1664,7 @@ int main(int argc, char **argv_orig, char **envp) {
               }
 
               afl->expand_havoc = 2;
+              if (afl->cmplog_lvl < 2) afl->cmplog_lvl = 2;
               break;
             case 2:
               // if (!have_p) afl->schedule = EXPLOIT;
@@ -1659,11 +1678,14 @@ int main(int argc, char **argv_orig, char **envp) {
               afl->expand_havoc = 4;
               break;
             case 4:
-              // if not in sync mode, enable deterministic mode?
-              // if (!afl->sync_id) afl->skip_deterministic = 0;
               afl->expand_havoc = 5;
+              if (afl->cmplog_lvl < 3) afl->cmplog_lvl = 3;
               break;
             case 5:
+              // if not in sync mode, enable deterministic mode?
+              if (!afl->sync_id) afl->skip_deterministic = 0;
+              afl->expand_havoc = 6;
+            case 6:
               // nothing else currently
               break;
 
