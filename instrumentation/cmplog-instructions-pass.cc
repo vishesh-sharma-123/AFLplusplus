@@ -251,7 +251,7 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
     IntegerType *        intTyOp1 = NULL;
     unsigned             max_size = 0;
     unsigned char        attr = 0;
-    std::vector<Value *> args, args2;
+    std::vector<Value *> args;
 
     if (selectcmpInst->getOpcode() == Instruction::FCmp) {
 
@@ -387,7 +387,7 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
         IRB.CreateCall(cmplogHookIns8, args);
         break;
       case 128:
-        IRB.CreateCall(cmplogHookIns16, args2);
+        IRB.CreateCall(cmplogHookIns16, args);
         break;
       default:
         break;

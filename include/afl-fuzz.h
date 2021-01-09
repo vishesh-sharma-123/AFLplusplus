@@ -159,7 +159,8 @@ struct queue_entry {
   u8 *fname;                            /* File name for the test case      */
   u32 len;                              /* Input length                     */
 
-  u8   cal_failed;                      /* Calibration failed?              */
+  u8 colorized,                         /* Do not run redqueen stage again  */
+      cal_failed;                       /* Calibration failed?              */
   bool trim_done,                       /* Trimmed?                         */
       was_fuzzed,                       /* historical, but needed for MOpt  */
       passed_det,                       /* Deterministic stages passed?     */
@@ -167,7 +168,6 @@ struct queue_entry {
       var_behavior,                     /* Variable behavior?               */
       favored,                          /* Currently favored?               */
       fs_redundant,                     /* Marked as redundant in the fs?   */
-      colorized,                        /* Do not run redqueen stage again  */
       is_ascii,                         /* Is the input just ascii text?    */
       disabled;                         /* Is disabled from fuzz selection  */
 
