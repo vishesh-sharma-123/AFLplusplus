@@ -200,32 +200,7 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
 
         if ((selectcmpInst = dyn_cast<CmpInst>(&IN))) {
 
-          if (selectcmpInst->getPredicate() == CmpInst::ICMP_EQ ||
-              selectcmpInst->getPredicate() == CmpInst::ICMP_NE ||
-              selectcmpInst->getPredicate() == CmpInst::ICMP_UGT ||
-              selectcmpInst->getPredicate() == CmpInst::ICMP_SGT ||
-              selectcmpInst->getPredicate() == CmpInst::ICMP_ULT ||
-              selectcmpInst->getPredicate() == CmpInst::ICMP_SLT ||
-              selectcmpInst->getPredicate() == CmpInst::ICMP_UGE ||
-              selectcmpInst->getPredicate() == CmpInst::ICMP_SGE ||
-              selectcmpInst->getPredicate() == CmpInst::ICMP_ULE ||
-              selectcmpInst->getPredicate() == CmpInst::ICMP_SLE ||
-              selectcmpInst->getPredicate() == CmpInst::FCMP_OGE ||
-              selectcmpInst->getPredicate() == CmpInst::FCMP_UGE ||
-              selectcmpInst->getPredicate() == CmpInst::FCMP_OLE ||
-              selectcmpInst->getPredicate() == CmpInst::FCMP_ULE ||
-              selectcmpInst->getPredicate() == CmpInst::FCMP_OGT ||
-              selectcmpInst->getPredicate() == CmpInst::FCMP_UGT ||
-              selectcmpInst->getPredicate() == CmpInst::FCMP_OLT ||
-              selectcmpInst->getPredicate() == CmpInst::FCMP_ULT ||
-              selectcmpInst->getPredicate() == CmpInst::FCMP_UEQ ||
-              selectcmpInst->getPredicate() == CmpInst::FCMP_OEQ ||
-              selectcmpInst->getPredicate() == CmpInst::FCMP_UNE ||
-              selectcmpInst->getPredicate() == CmpInst::FCMP_ONE) {
-
-            icomps.push_back(selectcmpInst);
-
-          }
+          icomps.push_back(selectcmpInst);
 
         }
 
