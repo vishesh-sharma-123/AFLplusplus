@@ -391,7 +391,7 @@ static u8 its_fuzz(afl_state_t *afl, u8 *buf, u32 len, u8 *status) {
 
   orig_hit_cnt = afl->queued_paths + afl->unique_crashes;
 
-  if (logging) dump("DATA", buf, len);
+  //dump("DATA", buf, len);
 
   if (unlikely(common_fuzz_stuff(afl, buf, len))) { return 1; }
 
