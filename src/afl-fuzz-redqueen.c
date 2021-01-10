@@ -1574,6 +1574,7 @@ exit_its:
 
       afl->queue_cur->cmplog_colorinput = ck_alloc_nozero(len);
       memcpy(afl->queue_cur->cmplog_colorinput, buf, len);
+      memcpy(buf, orig_buf, len);
 
     }
 
@@ -1582,7 +1583,6 @@ exit_its:
   new_hit_cnt = afl->queued_paths + afl->unique_crashes;
   afl->stage_finds[STAGE_ITS] += new_hit_cnt - orig_hit_cnt;
   afl->stage_cycles[STAGE_ITS] += afl->fsrv.total_execs - orig_execs;
-  memcpy(buf, orig_buf, len);
 
   return r;
 
