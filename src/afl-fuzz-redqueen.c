@@ -82,6 +82,7 @@ static struct range *pop_biggest_range(struct range **ranges) {
 }
 
 #ifdef _DEBUG
+static int  logging = 0;
 static void dump(char *txt, u8 *buf, u32 len) {
 
   u32 i;
@@ -390,6 +391,8 @@ static u8 its_fuzz(afl_state_t *afl, u8 *buf, u32 len, u8 *status) {
 
   orig_hit_cnt = afl->queued_paths + afl->unique_crashes;
 
+  if (logging) dump("DATA", buf, len);
+
   if (unlikely(common_fuzz_stuff(afl, buf, len))) { return 1; }
 
   new_hit_cnt = afl->queued_paths + afl->unique_crashes;
@@ -548,7 +551,7 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   }
 
-  if ((lvl & 1) || ((lvl & 2) && (attr & 8)) || !attr) {
+  if ((lvl & 1) || ((lvl & 2) && (attr >= 8 && attr <= 31)) || !attr) {
 
     if (SHAPE_BYTES(h->shape) >= 8 && *status != 1) {
 
@@ -679,7 +682,7 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   if (lvl < 4) { return 0; }
 
-  if (attr > 9 && attr < 16) {  // lesser/greater integer comparison
+  if (attr >= 8 && attr < 16) {  // lesser/greater integer comparison
 
     u64 repl_new;
     if (SHAPE_BYTES(h->shape) == 4 && its_len >= 4) {
@@ -969,7 +972,7 @@ static void try_to_add_to_dict128(afl_state_t *afl, u128 v) {
 }
 
 static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
-                   struct tainted *taint) {
+                   u32 lvl, struct tainted *taint) {
 
   struct cmp_header *h = &afl->shm.cmp_map->headers[key];
   struct tainted *   t;
@@ -977,9 +980,8 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
   u32                loggeds = h->hits;
   if (h->hits > CMP_MAP_H) { loggeds = CMP_MAP_H; }
 
-  u8 status = 0;
-  // opt not in the paper
-  u32 fails, lvl = 0;
+  u8  status = 0;
+  u32 fails;
   u8  found_one = 0;
 
   /* loop cmps are useless, detect and ignore them */
@@ -988,17 +990,11 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
   u8   s_v0_fixed = 1, s_v1_fixed = 1;
   u8   s_v0_inc = 1, s_v1_inc = 1;
   u8   s_v0_dec = 1, s_v1_dec = 1;
-  u32  cmplog_done = afl->queue_cur->colorized;
-  u32  cmplog_lvl = afl->cmplog_lvl;
 
   if (unlikely(SHAPE_BYTES(h->shape) == 16)) { is_128 = 1; }
 
-  if (!cmplog_done) { lvl = 1; }
-  if (cmplog_lvl >= 2 && cmplog_done < 2) { lvl += 2; }
-  if (cmplog_lvl >= 3 && cmplog_done < 3) { lvl += 4; }
-
   // FCmp not in if level 1 only
-  if (((h->attribute & 8) && lvl < 2) || !lvl) return 0;
+  if ((h->attribute & 8) && lvl < 2) return 0;
 
   for (i = 0; i < loggeds; ++i) {
 
@@ -1448,13 +1444,29 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
 
   struct tainted *taint = NULL;
 
-  if (!afl->queue_cur->taint) {
+  if (!afl->queue_cur->taint || !afl->queue_cur->cmplog_colorinput) {
 
     if (unlikely(colorization(afl, buf, len, exec_cksum, &taint))) { return 1; }
+
+    // no taint? still try, create a dummy to prevent again colorization
+    if (!taint) {
+
+      taint = ck_alloc(sizeof(struct tainted));
+      taint->len = len;
+
+    }
+
+  } else {
+
+    buf = afl->queue_cur->cmplog_colorinput;
+    taint = afl->queue_cur->taint;
+    // reget the cmplog information
+    if (unlikely(common_fuzz_cmplog_stuff(afl, buf, len))) { return 1; }
 
   }
 
   struct tainted *t = taint;
+
   while (t) {
 
     // fprintf(stderr, "T: pos=%u len=%u\n", t->pos, t->len);
@@ -1475,6 +1487,13 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
   afl->stage_short = "its";
   afl->stage_max = 0;
   afl->stage_cur = 0;
+
+  u32 lvl = 0;
+  u32 cmplog_done = afl->queue_cur->colorized;
+  u32 cmplog_lvl = afl->cmplog_lvl;
+  if (!cmplog_done) { lvl = 1; }
+  if (cmplog_lvl >= 2 && cmplog_done < 2) { lvl += 2; }
+  if (cmplog_lvl >= 3 && cmplog_done < 3) { lvl += 4; }
 
   u32 k;
   for (k = 0; k < CMP_MAP_W; ++k) {
@@ -1510,7 +1529,7 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
 
     if (afl->shm.cmp_map->headers[k].type == CMP_TYPE_INS) {
 
-      if (unlikely(cmp_fuzz(afl, k, orig_buf, buf, len, taint))) {
+      if (unlikely(cmp_fuzz(afl, k, orig_buf, buf, len, lvl, taint))) {
 
         goto exit_its;
 
@@ -1533,7 +1552,33 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
 exit_its:
 
   afl->queue_cur->colorized = afl->cmplog_lvl;
-  afl->queue_cur->taint = taint;
+  if (afl->cmplog_lvl == CMPLOG_LVL_MAX) {
+
+    ck_free(afl->queue_cur->cmplog_colorinput);
+    t = taint;
+    while (taint) {
+
+      t = taint->next;
+      ck_free(taint);
+      taint = t;
+
+    }
+
+    afl->queue_cur->taint = NULL;
+
+  } else {
+
+    if (!afl->queue_cur->taint) { afl->queue_cur->taint = taint;}
+
+    if (!afl->queue_cur->cmplog_colorinput) {
+
+      afl->queue_cur->cmplog_colorinput = ck_alloc_nozero(len);
+      memcpy(afl->queue_cur->cmplog_colorinput, buf, len);
+
+    }
+
+  }
+
   new_hit_cnt = afl->queued_paths + afl->unique_crashes;
   afl->stage_finds[STAGE_ITS] += new_hit_cnt - orig_hit_cnt;
   afl->stage_cycles[STAGE_ITS] += afl->fsrv.total_execs - orig_execs;

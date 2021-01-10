@@ -782,15 +782,20 @@ int main(int argc, char **argv_orig, char **envp) {
       case 'l': {
 
         afl->cmplog_lvl = atoi(optarg);
-        if (afl->cmplog_lvl < 1 || afl->cmplog_lvl > 3) {
+        if (afl->cmplog_lvl < 1 || afl->cmplog_lvl > CMPLOG_LVL_MAX) {
 
           FATAL(
               "Bad complog level value, accepted values are 1 (default), 2 and "
-              "3.");
+              "%u.",
+              CMPLOG_LVL_MAX);
 
         }
 
-        if (afl->cmplog_lvl == 3) { afl->cmplog_max_filesize = MAX_FILE; }
+        if (afl->cmplog_lvl == CMPLOG_LVL_MAX) {
+
+          afl->cmplog_max_filesize = MAX_FILE;
+
+        }
 
       } break;
 

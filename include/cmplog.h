@@ -30,6 +30,8 @@
 
 #include "config.h"
 
+#define CMPLOG_LVL_MAX 3
+
 #define CMP_MAP_W 65536
 #define CMP_MAP_H 32
 #define CMP_MAP_RTN_H (CMP_MAP_H / 4)
