@@ -459,8 +459,8 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
 
     }
 
-    fprintf(stderr, "_ExtInt(%u) castsize %u with attribute %u didcast %u\n",
-            max_size, cast_size, attr, do_cast);
+    // fprintf(stderr, "_ExtInt(%u) castTo %u with attr %u didcast %u\n",
+    //         max_size, cast_size, attr, do_cast);
 
     switch (cast_size) {
 

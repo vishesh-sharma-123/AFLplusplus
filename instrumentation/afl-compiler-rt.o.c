@@ -1218,9 +1218,10 @@ void __cmplog_ins_hook8(uint64_t arg1, uint64_t arg2, uint8_t attr) {
 void __cmplog_ins_hookN(uint128_t arg1, uint128_t arg2, uint8_t attr,
                         uint8_t size) {
 
-  fprintf(stderr, "hookN arg0=%llx:%llx arg1=%llx:%llx bytes=%u attr=%u\n",
-          (u64)(arg1 >> 64), (u64)arg1, (u64)(arg2 >> 64), (u64)arg2, size + 1,
-          attr);
+  // fprintf(stderr, "hookN arg0=%llx:%llx arg1=%llx:%llx bytes=%u attr=%u\n",
+  // (u64)(arg1 >> 64), (u64)arg1, (u64)(arg2 >> 64), (u64)arg2, size + 1,
+  // attr);
+
   if (unlikely(!__afl_cmp_map)) return;
 
   uintptr_t k = (uintptr_t)__builtin_return_address(0);

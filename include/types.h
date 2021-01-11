@@ -119,32 +119,29 @@ typedef int128_t s128;
   })
 
 // It is impossible to define 128 bit constants, so ...
-#if (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
-  #define SWAPN(_x, _l)                            \
-    ({                                             \
-                                                   \
-      u128  _res = (_x), _ret;                     \
-      char *d = (char *)&_ret, *s = (char *)&_res; \
-      int   i;                                     \
-      for (i = 0; i < 16; i++)                     \
-        d[15 - 1 - i] = s[i];                      \
-      _res >>= (128 - (_l));                       \
-      (u128) _ret;                                 \
-                                                   \
-    })
-#else
-  #define SWAPN(_x, _l)                            \
-    ({                                             \
-                                                   \
-      u128  _res = (_x), _ret;                     \
-      char *d = (char *)&_ret, *s = (char *)&_res; \
-      int   i;                                     \
-      for (i = 0; i < 16; i++)                     \
-        d[15 - 1 - i] = s[i];                      \
-      (u128) _ret;                                 \
-                                                   \
-    })
-#endif
+#define SWAPN(_x, _l)                            \
+  ({                                             \
+                                                 \
+    u128  _res = (_x), _ret;                     \
+    char *d = (char *)&_ret, *s = (char *)&_res; \
+    int   i;                                     \
+    for (i = 0; i < 16; i++)                     \
+      d[15 - i] = s[i];                          \
+    u32 sr = 128U - ((_l) << 3U);                \
+    (_ret >>= sr);                               \
+    (u128) _ret;                                 \
+                                                 \
+  })
+
+#define SWAPNN(_x, _y, _l)                     \
+  ({                                           \
+                                               \
+    char *d = (char *)(_x), *s = (char *)(_y); \
+    u32   i, l = (_l)-1;                       \
+    for (i = 0; i <= l; i++)                   \
+      d[l - i] = s[i];                         \
+                                               \
+  })
 
 #ifdef AFL_LLVM_PASS
   #if defined(__linux__) || !defined(__ANDROID__)
