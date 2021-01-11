@@ -553,7 +553,7 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
   }
 
-  if ((lvl & 1) || ((lvl & 2) && (attr >= 8 && attr <= 31)) || !attr) {
+  if ((lvl & 1) || ((lvl & 2) && (attr >= 8 && attr <= 15)) || attr >= 16) {
 
     if (SHAPE_BYTES(h->shape) >= 8 && *status != 1) {
 
@@ -567,8 +567,7 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
       // if this is an fcmp (attr & 8 == 8) then do not compare the patterns -
       // due to a bug in llvm dynamic float bitcasts do not work :(
       // the value 16 means this is a +- 1.0 test case
-      if (its_len >= 8 && ((attr >= 8 || attr == 0) ||
-                           (*buf_64 == pattern && *o_buf_64 == o_pattern))) {
+      if (its_len >= 8 && *buf_64 == pattern && *o_buf_64 == o_pattern) {
 
         u64 tmp_64 = *buf_64;
         *buf_64 = repl;
@@ -585,7 +584,7 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
         if (unlikely(cmp_extend_encoding(afl, h, SWAP64(pattern), SWAP64(repl),
                                          SWAP64(o_pattern), SWAP64(changed_val),
                                          attr, idx, taint_len, orig_buf, buf,
-                                         len, 0, lvl, status))) {
+                                         len, attr, lvl, status))) {
 
           return 1;
 
@@ -604,9 +603,8 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
       //         its_len, *buf_32, pattern, *o_buf_32, o_pattern, idx, attr,
       //         repl, changed_val);
 
-      if (its_len >= 4 &&
-          ((*buf_32 == (u32)pattern && *o_buf_32 == (u32)o_pattern) ||
-           (attr >= 8 || attr == 0))) {
+      if (its_len >= 4 && *buf_32 == (u32)pattern &&
+          *o_buf_32 == (u32)o_pattern) {
 
         u32 tmp_32 = *buf_32;
         *buf_32 = (u32)repl;
@@ -623,7 +621,7 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
         if (unlikely(cmp_extend_encoding(afl, h, SWAP32(pattern), SWAP32(repl),
                                          SWAP32(o_pattern), SWAP32(changed_val),
                                          attr, idx, taint_len, orig_buf, buf,
-                                         len, 0, lvl, status))) {
+                                         len, attr, lvl, status))) {
 
           return 1;
 
@@ -652,7 +650,7 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
         if (unlikely(cmp_extend_encoding(afl, h, SWAP16(pattern), SWAP16(repl),
                                          SWAP16(o_pattern), SWAP16(changed_val),
                                          attr, idx, taint_len, orig_buf, buf,
-                                         len, 0, lvl, status))) {
+                                         len, attr, lvl, status))) {
 
           return 1;
 
@@ -789,7 +787,7 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
     changed_val = repl_new;
     if (unlikely(cmp_extend_encoding(afl, h, pattern, repl_new, o_pattern,
                                      changed_val, 0, idx, taint_len, orig_buf,
-                                     buf, len, 0, lvl, status))) {
+                                     buf, len, 32, lvl, status))) {
 
       return 1;
 
@@ -799,7 +797,7 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
     changed_val = repl_new;
     if (unlikely(cmp_extend_encoding(afl, h, pattern, repl_new, o_pattern,
                                      changed_val, 0, idx, taint_len, orig_buf,
-                                     buf, len, 0, lvl, status))) {
+                                     buf, len, 32, lvl, status))) {
 
       return 1;
 
@@ -1086,10 +1084,10 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
   switch (SHAPE_BYTES(h->shape)) {
 
-    case 8:
-    case 4:
-    case 2:
     case 1:
+    case 2:
+    case 4:
+    case 8:
       break;
     case 16:
       is_128 = 1;

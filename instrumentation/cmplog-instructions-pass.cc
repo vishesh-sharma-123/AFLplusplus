@@ -369,10 +369,78 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
 
     if (do_cast) {
 
-      Value *V0 = IRB.CreateBitCast(op0, IntegerType::get(C, cast_size));
-      Value *V1 = IRB.CreateBitCast(op1, IntegerType::get(C, cast_size));
-      args.push_back(V0);
-      args.push_back(V1);
+      // F*cking LLVM optimized out any kind of bitcasts of ConstantInt values
+      // creating illegal calls. WTF. So we have to work around this.
+
+      ConstantInt *cint = dyn_cast<ConstantInt>(op0);
+      if (cint) {
+
+        uint64_t     val = cint->getZExtValue();
+        ConstantInt *new_param = NULL;
+        switch (cast_size) {
+
+          case 8:
+            new_param = ConstantInt::get(Int8Ty, val);
+            break;
+          case 16:
+            new_param = ConstantInt::get(Int16Ty, val);
+            break;
+          case 32:
+            new_param = ConstantInt::get(Int32Ty, val);
+            break;
+          case 64:
+            new_param = ConstantInt::get(Int64Ty, val);
+            break;
+          case 128:
+            new_param = ConstantInt::get(Int128Ty, val);
+            break;
+
+        }
+
+        if (!new_param) { continue; }
+        args.push_back(new_param);
+
+      } else {
+
+        Value *V0 = IRB.CreateBitCast(op0, IntegerType::get(C, cast_size));
+        args.push_back(V0);
+
+      }
+
+      cint = dyn_cast<ConstantInt>(op1);
+      if (cint) {
+
+        uint64_t     val = cint->getZExtValue();
+        ConstantInt *new_param = NULL;
+        switch (cast_size) {
+
+          case 8:
+            new_param = ConstantInt::get(Int8Ty, val);
+            break;
+          case 16:
+            new_param = ConstantInt::get(Int16Ty, val);
+            break;
+          case 32:
+            new_param = ConstantInt::get(Int32Ty, val);
+            break;
+          case 64:
+            new_param = ConstantInt::get(Int64Ty, val);
+            break;
+          case 128:
+            new_param = ConstantInt::get(Int128Ty, val);
+            break;
+
+        }
+
+        if (!new_param) { continue; }
+        args.push_back(new_param);
+
+      } else {
+
+        Value *V1 = IRB.CreateBitCast(op1, IntegerType::get(C, cast_size));
+        args.push_back(V1);
+
+      }
 
     } else {
 
