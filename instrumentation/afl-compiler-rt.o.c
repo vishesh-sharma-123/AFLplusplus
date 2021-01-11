@@ -1214,7 +1214,39 @@ void __cmplog_ins_hook8(uint64_t arg1, uint64_t arg2, uint8_t attr) {
 
 }
 
-typedef unsigned __int128 uint128_t;
+// support for u24 to u120 via llvm _ExitInt(). size is in bytes minus 1
+void __cmplog_ins_hookN(uint128_t arg1, uint128_t arg2, uint8_t attr,
+                        uint8_t size) {
+
+  fprintf(stderr, "hookN arg0=%llx arg1=%llx bytes=%u attr=%u\n", (u64)arg1,
+          (u64)arg2, size + 1, attr);
+  if (unlikely(!__afl_cmp_map)) return;
+
+  uintptr_t k = (uintptr_t)__builtin_return_address(0);
+  k = (k >> 4) ^ (k << 8);
+  k &= CMP_MAP_W - 1;
+
+  __afl_cmp_map->headers[k].type = CMP_TYPE_INS;
+  __afl_cmp_map->headers[k].attribute = attr;
+
+  u32 hits = __afl_cmp_map->headers[k].hits;
+  __afl_cmp_map->headers[k].hits = hits + 1;
+
+  __afl_cmp_map->headers[k].shape = size;
+
+  hits &= CMP_MAP_H - 1;
+  __afl_cmp_map->log[k][hits].v0 = (u64)arg1;
+  __afl_cmp_map->log[k][hits].v1 = (u64)arg2;
+
+  if (size > 7) {
+
+    __afl_cmp_map->log[k][hits].v0_128 = (u64)(arg1 >> 64);
+    __afl_cmp_map->log[k][hits].v1_128 = (u64)(arg2 >> 64);
+
+  }
+
+}
+
 void __cmplog_ins_hook16(uint128_t arg1, uint128_t arg2, uint8_t attr) {
 
   if (unlikely(!__afl_cmp_map)) return;

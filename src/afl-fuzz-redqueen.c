@@ -28,6 +28,8 @@
 #include "afl-fuzz.h"
 #include "cmplog.h"
 
+// #define _DEBUG
+
 ///// Colorization
 
 struct range {
@@ -82,7 +84,7 @@ static struct range *pop_biggest_range(struct range **ranges) {
 }
 
 #ifdef _DEBUG
-static int  logging = 0;
+// static int  logging = 0;
 static void dump(char *txt, u8 *buf, u32 len) {
 
   u32 i;
@@ -391,7 +393,7 @@ static u8 its_fuzz(afl_state_t *afl, u8 *buf, u32 len, u8 *status) {
 
   orig_hit_cnt = afl->queued_paths + afl->unique_crashes;
 
-  //dump("DATA", buf, len);
+  // dump("DATA", buf, len);
 
   if (unlikely(common_fuzz_stuff(afl, buf, len))) { return 1; }
 
@@ -823,26 +825,24 @@ static u8 cmp_extend_encoding128(afl_state_t *afl, struct cmp_header *h,
   u64   v10 = (u64)repl;
   u64   v11 = repl >> 64;
 
-  /*
-         fprintf(stderr,
-                 "TestU128: %u>=16 (idx=%u attr=%u) (%u)\n",
-                 its_len, idx, attr, do_reverse);
-         u64 v00 = (u64)pattern;
-         u64 v01 = pattern >> 64;
-         u64 ov00 = (u64)o_pattern;
-         u64 ov01 = o_pattern >> 64;
-         u64 ov10 = (u64)changed_val;
-         u64 ov11 = changed_val >> 64;
-         u64 b00 = (u64)*buf_128;
-         u64 b01 = *buf_128 >> 64;
-         u64 ob00 = (u64)*o_buf_128;
-         u64 ob01 = *o_buf_128 >> 64;
-         fprintf(stderr,
-                 "TestU128: %llx:%llx==%llx:%llx"
-                 " %llx:%llx==%llx:%llx <= %llx:%llx<-%llx:%llx\n",
-                 b01, b00, v01, v00, ob01, ob00, ov01, ov00,
-                 v11, v10, ov11, ov10);
-  */
+#ifdef _DEBUG
+  fprintf(stderr, "TestU128: %u>=16 (idx=%u attr=%u) (%u)\n", its_len, idx,
+          attr, do_reverse);
+  u64 v00 = (u64)pattern;
+  u64 v01 = pattern >> 64;
+  u64 ov00 = (u64)o_pattern;
+  u64 ov01 = o_pattern >> 64;
+  u64 ov10 = (u64)changed_val;
+  u64 ov11 = changed_val >> 64;
+  u64 b00 = (u64)*buf_128;
+  u64 b01 = *buf_128 >> 64;
+  u64 ob00 = (u64)*o_buf_128;
+  u64 ob01 = *o_buf_128 >> 64;
+  fprintf(stderr,
+          "TestU128: %llx:%llx==%llx:%llx"
+          " %llx:%llx==%llx:%llx <= %llx:%llx<-%llx:%llx\n",
+          b01, b00, v01, v00, ob01, ob00, ov01, ov00, v11, v10, ov11, ov10);
+#endif
 
   // if this is an fcmp (attr & 8 == 8) then do not compare the patterns -
   // due to a bug in llvm dynamic float bitcasts do not work :(
@@ -857,7 +857,9 @@ static u8 cmp_extend_encoding128(afl_state_t *afl, struct cmp_header *h,
     if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
     *buf_128 = tmp_128;
 
+#ifdef _DEBUG
     // fprintf(stderr, "Status=%u\n", *status);
+#endif
 
   }
 
@@ -865,8 +867,62 @@ static u8 cmp_extend_encoding128(afl_state_t *afl, struct cmp_header *h,
   if (do_reverse && *status != 1) {
 
     if (unlikely(cmp_extend_encoding128(
-            afl, h, SWAP128(pattern), SWAP128(repl), SWAP128(o_pattern),
-            SWAP128(changed_val), attr, idx, taint_len, orig_buf, buf, len, 0,
+            afl, h, SWAPN(pattern, 128), SWAPN(repl, 128),
+            SWAPN(o_pattern, 128), SWAPN(changed_val, 128), attr, idx,
+            taint_len, orig_buf, buf, len, 0, lvl, status))) {
+
+      return 1;
+
+    }
+
+  }
+
+  return 0;
+
+}
+
+static u8 cmp_extend_encoding_ld(afl_state_t *afl, struct cmp_header *h,
+                                 long double pattern, long double repl,
+                                 long double o_pattern, long double changed_val,
+                                 u8 attr, u32 idx, u32 taint_len, u8 *orig_buf,
+                                 u8 *buf, u32 len, u8 do_reverse, u8 lvl,
+                                 u8 *status) {
+
+  long double *buf_ld = (long double *)&buf[idx];
+  u32          its_len = MIN(len - idx, taint_len);
+
+#ifdef _DEBUG
+  fprintf(stderr, "TestUld: %u>=16 (idx=%u attr=%u) (%u)\n", its_len, idx, attr,
+          do_reverse);
+  long double *o_buf_ld = (long double *)&orig_buf[idx];
+  fprintf(stderr,
+          "TestUld: %Lf==%Lf"
+          " %Lf==%Lf <= %Lf<-%Lf\n",
+          pattern, *buf_ld, o_pattern, *o_buf_ld, repl, changed_val);
+#endif
+
+  // if this is an fcmp (attr & 8 == 8) then do not compare the patterns -
+  // due to a bug in llvm dynamic float bitcasts do not work :(
+  // the value 16 means this is a +- 1.0 test case
+  if (its_len >= 10) {
+
+    long double tmp_ld = *buf_ld;
+    *buf_ld = repl;
+    if (unlikely(its_fuzz(afl, buf, len, status))) { return 1; }
+    *buf_ld = tmp_ld;
+
+#ifdef _DEBUG
+    fprintf(stderr, "Status=%u\n", *status);
+#endif
+
+  }
+
+  // reverse encoding
+  if (do_reverse && *status != 1) {
+
+    if (unlikely(cmp_extend_encoding_ld(
+            afl, h, SWAPN(pattern, 80), SWAPN(repl, 80), SWAPN(o_pattern, 80),
+            SWAPN(changed_val, 80), attr, idx, taint_len, orig_buf, buf, len, 0,
             lvl, status))) {
 
       return 1;
@@ -966,8 +1022,43 @@ static void try_to_add_to_dict128(afl_state_t *afl, u128 v) {
   }
 
   maybe_add_auto(afl, (u8 *)&v, 16);
-  u128 rev = SWAP128(v);
+  u128 rev = SWAPN(v, 128);
   maybe_add_auto(afl, (u8 *)&rev, 16);
+
+}
+
+static void try_to_add_to_dictN(afl_state_t *afl, u128 v, u8 size) {
+
+  u8 *b = (u8 *)&v;
+
+  u32 k;
+  u8  cons_ff = 0, cons_0 = 0;
+#if (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+  for (k = 0; k < size; ++k) {
+
+#else
+  for (k = 16 - size; k < 16; ++k) {
+
+#endif
+    if (b[k] == 0) {
+
+      ++cons_0;
+
+    } else if (b[k] == 0xff) {
+
+      ++cons_0;
+
+    } else {
+
+      cons_0 = cons_ff = 0;
+
+    }
+
+  }
+
+  maybe_add_auto(afl, (u8 *)&v, size);
+  u128 rev = SWAPN(v, size);
+  maybe_add_auto(afl, (u8 *)&rev, size);
 
 }
 
@@ -976,7 +1067,8 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
   struct cmp_header *h = &afl->shm.cmp_map->headers[key];
   struct tainted *   t;
-  u32                i, j, idx, have_taint = 1, taint_len, is_128 = 0;
+  u32                i, j, idx, taint_len;
+  u32                have_taint = 1, is_128 = 0, is_n = 0, is_ld = 0;
   u32                loggeds = h->hits;
   if (h->hits > CMP_MAP_H) { loggeds = CMP_MAP_H; }
 
@@ -985,13 +1077,30 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
   u8  found_one = 0;
 
   /* loop cmps are useless, detect and ignore them */
-  u128 s128_v0, s128_v1, orig_s128_v0, orig_s128_v1;
-  u64  s_v0, s_v1;
-  u8   s_v0_fixed = 1, s_v1_fixed = 1;
-  u8   s_v0_inc = 1, s_v1_inc = 1;
-  u8   s_v0_dec = 1, s_v1_dec = 1;
+  u128        s128_v0 = 0, s128_v1 = 0, orig_s128_v0 = 0, orig_s128_v1 = 0;
+  long double ld0, ld1, o_ld0, o_ld1;
+  u64         s_v0, s_v1;
+  u8          s_v0_fixed = 1, s_v1_fixed = 1;
+  u8          s_v0_inc = 1, s_v1_inc = 1;
+  u8          s_v0_dec = 1, s_v1_dec = 1;
 
-  if (unlikely(SHAPE_BYTES(h->shape) == 16)) { is_128 = 1; }
+  switch (SHAPE_BYTES(h->shape)) {
+
+    case 8:
+    case 4:
+    case 2:
+    case 1:
+      break;
+    case 16:
+      is_128 = 1;
+      break;
+    case 10:
+      if (h->attribute & 8) { is_ld = 1; }
+      // fall through
+    default:
+      is_n = 1;
+
+  }
 
   // FCmp not in if level 1 only
   if ((h->attribute & 8) && lvl < 2) return 0;
@@ -1023,6 +1132,9 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
     struct cmp_operands *orig_o = &afl->orig_cmp_map->log[key][i];
 
+    // skip uncontrolled
+    if (orig_o->v0 == o->v0 && orig_o->v1 == o->v1) { continue; }
+
     // opt not in the paper
     for (j = 0; j < i; ++j) {
 
@@ -1035,9 +1147,11 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
     }
 
-    // fprintf(stderr, "Handling: %llx->%llx vs %llx->%llx attr=%u shape=%u\n",
-    // orig_o->v0, o->v0, orig_o->v1, o->v1, h->attribute,
-    // SHAPE_BYTES(h->shape));
+#ifdef _DEBUG
+    fprintf(stderr, "Handling: %llx->%llx vs %llx->%llx attr=%u shape=%u\n",
+            orig_o->v0, o->v0, orig_o->v1, o->v1, h->attribute,
+            SHAPE_BYTES(h->shape));
+#endif
 
     if (taint) {
 
@@ -1056,12 +1170,30 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
     }
 
-    if (unlikely(is_128)) {
+    if (unlikely(is_128 || is_n)) {
 
       s128_v0 = (u128)o->v0 + (((u128)o->v0_128) << 64);
       s128_v1 = (u128)o->v1 + (((u128)o->v1_128) << 64);
       orig_s128_v0 = (u128)orig_o->v0 + (((u128)orig_o->v0_128) << 64);
       orig_s128_v1 = (u128)orig_o->v1 + (((u128)orig_o->v1_128) << 64);
+
+      if (is_ld) {
+
+#if (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+        memcpy((char *)&ld0, (char *)&s128_v0, sizeof(long double));
+        memcpy((char *)&ld1, (char *)&s128_v1, sizeof(long double));
+        memcpy((char *)&o_ld0, (char *)&orig_s128_v1, sizeof(long double));
+        memcpy((char *)&o_ld1, (char *)&orig_s128_v1, sizeof(long double));
+#else
+        memcpy((char *)&ld0, (char *)(&s128_v0) + 6, sizeof(long double));
+        memcpy((char *)&ld1, (char *)(&s128_v1) + 6, sizeof(long double));
+        memcpy((char *)&o_ld0, (char *)(&orig_s128_v1) + 6,
+               sizeof(long double));
+        memcpy((char *)&o_ld1, (char *)(&orig_s128_v1) + 6,
+               sizeof(long double));
+#endif
+
+      }
 
     }
 
@@ -1089,7 +1221,57 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
       status = 0;
 
-      if (is_128) {
+      if (is_ld) {  // long double special case
+
+        if (ld0 != o_ld0) {
+
+          if (unlikely(cmp_extend_encoding_ld(
+                  afl, h, ld0, ld1, o_ld0, o_ld1, h->attribute, idx, taint_len,
+                  orig_buf, buf, len, 1, lvl, &status))) {
+
+            return 1;
+
+          }
+
+        }
+
+        if (status == 2) {
+
+          ++fails;
+
+        } else if (status == 1) {
+
+          found_one = 1;
+          break;
+
+        }
+
+        if (ld1 != o_ld1) {
+
+          if (unlikely(cmp_extend_encoding_ld(
+                  afl, h, ld1, ld0, o_ld1, o_ld0, h->attribute, idx, taint_len,
+                  orig_buf, buf, len, 1, lvl, &status))) {
+
+            return 1;
+
+          }
+
+        }
+
+        if (status == 2) {
+
+          ++fails;
+
+        } else if (status == 1) {
+
+          found_one = 1;
+          break;
+
+        }
+
+      }
+
+      if (is_128) {  // u128 special case
 
         if (s128_v0 != orig_s128_v0) {
 
@@ -1141,6 +1323,10 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
       }
 
+      // even for u128 and long double do cmp_extend_encoding() because
+      // if we got here their own special trials failed and it might just be
+      // a cast from e.g. u64 to u128 from the input data.
+
       if (o->v0 != orig_o->v0) {
 
         if (unlikely(cmp_extend_encoding(
@@ -1190,18 +1376,28 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
     }
 
-    // fprintf(stderr, "END: %llx->%llx vs %llx->%llx attr=%u i=%u found=%u\n",
-    // orig_o->v0, o->v0, orig_o->v1, o->v1, h->attribute, i, found_one);
+#ifdef _DEBUG
+    fprintf(stderr,
+            "END: %llx->%llx vs %llx->%llx attr=%u i=%u found=%u is128=%u "
+            "isN=%u size=%u\n",
+            orig_o->v0, o->v0, orig_o->v1, o->v1, h->attribute, i, found_one,
+            is_128, is_n, SHAPE_BYTES(h->shape));
+#endif
 
     // If failed, add to dictionary
     if (!found_one) {
 
       if (afl->pass_stats[key].total == 0) {
 
-        if (SHAPE_BYTES(h->shape) == 16) {
+        if (unlikely(is_128)) {
 
-          try_to_add_to_dict128(afl, o->v0);
-          try_to_add_to_dict128(afl, o->v1);
+          try_to_add_to_dict128(afl, s128_v0);
+          try_to_add_to_dict128(afl, s128_v1);
+
+        } else if (unlikely(is_n)) {
+
+          try_to_add_to_dictN(afl, s128_v0, SHAPE_BYTES(h->shape));
+          try_to_add_to_dictN(afl, s128_v1, SHAPE_BYTES(h->shape));
 
         } else {
 
@@ -1469,7 +1665,9 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
 
   while (t) {
 
+#ifdef _DEBUG
     // fprintf(stderr, "T: pos=%u len=%u\n", t->pos, t->len);
+#endif
     t = t->next;
 
   }
@@ -1568,7 +1766,7 @@ exit_its:
 
   } else {
 
-    if (!afl->queue_cur->taint) { afl->queue_cur->taint = taint;}
+    if (!afl->queue_cur->taint) { afl->queue_cur->taint = taint; }
 
     if (!afl->queue_cur->cmplog_colorinput) {
 

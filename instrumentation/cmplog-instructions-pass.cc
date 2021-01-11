@@ -187,6 +187,24 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
   FunctionCallee cmplogHookIns16 = c16;
 #endif
 
+#if LLVM_VERSION_MAJOR < 9
+  Constant *
+#else
+  FunctionCallee
+#endif
+      cN = M.getOrInsertFunction("__cmplog_ins_hookN", VoidTy, Int128Ty,
+                                 Int128Ty, Int8Ty, Int8Ty
+#if LLVM_VERSION_MAJOR < 5
+                                 ,
+                                 NULL
+#endif
+      );
+#if LLVM_VERSION_MAJOR < 9
+  Function *cmplogHookInsN = cast<Function>(cN);
+#else
+  FunctionCallee cmplogHookInsN = cN;
+#endif
+
   /* iterate over all functions, bbs and instruction and add suitable calls */
   for (auto &F : M) {
 
@@ -219,14 +237,58 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
     IRBuilder<> IRB(selectcmpInst->getParent());
     IRB.SetInsertPoint(selectcmpInst);
 
-    auto op0 = selectcmpInst->getOperand(0);
-    auto op1 = selectcmpInst->getOperand(1);
+    Value *op0 = selectcmpInst->getOperand(0);
+    Value *op1 = selectcmpInst->getOperand(1);
 
     IntegerType *        intTyOp0 = NULL;
     IntegerType *        intTyOp1 = NULL;
-    unsigned             max_size = 0;
-    unsigned char        attr = 0;
+    unsigned             max_size = 0, cast_size = 0;
+    unsigned char        attr = 0, do_cast = 0;
     std::vector<Value *> args;
+
+    CmpInst *cmpInst = dyn_cast<CmpInst>(selectcmpInst);
+
+    if (!cmpInst) { continue; }
+
+    switch (cmpInst->getPredicate()) {
+
+      case CmpInst::ICMP_NE:
+      case CmpInst::FCMP_UNE:
+      case CmpInst::FCMP_ONE:
+        break;
+      case CmpInst::ICMP_EQ:
+      case CmpInst::FCMP_UEQ:
+      case CmpInst::FCMP_OEQ:
+        attr += 1;
+        break;
+      case CmpInst::ICMP_UGT:
+      case CmpInst::ICMP_SGT:
+      case CmpInst::FCMP_OGT:
+      case CmpInst::FCMP_UGT:
+        attr += 2;
+        break;
+      case CmpInst::ICMP_UGE:
+      case CmpInst::ICMP_SGE:
+      case CmpInst::FCMP_OGE:
+      case CmpInst::FCMP_UGE:
+        attr += 3;
+        break;
+      case CmpInst::ICMP_ULT:
+      case CmpInst::ICMP_SLT:
+      case CmpInst::FCMP_OLT:
+      case CmpInst::FCMP_ULT:
+        attr += 4;
+        break;
+      case CmpInst::ICMP_ULE:
+      case CmpInst::ICMP_SLE:
+      case CmpInst::FCMP_OLE:
+      case CmpInst::FCMP_ULE:
+        attr += 5;
+        break;
+      default:
+        break;
+
+    }
 
     if (selectcmpInst->getOpcode() == Instruction::FCmp) {
 
@@ -241,30 +303,13 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
         max_size = 32;
       else if (ty0->isDoubleTy())
         max_size = 64;
+      else if (ty0->isX86_FP80Ty())
+        max_size = 80;
+      else if (ty0->isFP128Ty() || ty0->isPPC_FP128Ty())
+        max_size = 128;
 
-      if (max_size) {
-
-        Value *V0 = IRB.CreateBitCast(op0, IntegerType::get(C, max_size));
-        intTyOp0 = dyn_cast<IntegerType>(V0->getType());
-        Value *V1 = IRB.CreateBitCast(op1, IntegerType::get(C, max_size));
-        intTyOp1 = dyn_cast<IntegerType>(V1->getType());
-
-        if (intTyOp0 && intTyOp1) {
-
-          max_size = intTyOp0->getBitWidth() > intTyOp1->getBitWidth()
-                         ? intTyOp0->getBitWidth()
-                         : intTyOp1->getBitWidth();
-          args.push_back(V0);
-          args.push_back(V1);
-          attr += 8;
-
-        } else {
-
-          max_size = 0;
-
-        }
-
-      }
+      attr += 8;
+      do_cast = 1;
 
     } else {
 
@@ -277,15 +322,36 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
                        ? intTyOp0->getBitWidth()
                        : intTyOp1->getBitWidth();
 
-        args.push_back(op0);
-        args.push_back(op1);
-
       }
 
     }
 
-    if (!intTyOp0 || !intTyOp1) continue;
+    if (!max_size) { continue; }
 
+    // _ExtInt() with non-8th values
+    if (max_size % 8) {
+
+      max_size = (((max_size / 8) + 1) * 8);
+      do_cast = 1;
+
+    }
+
+    if (max_size > 128) {
+
+      if (!be_quiet) {
+
+        fprintf(stderr,
+                "Cannot handle this compare bit size: %u (truncating)\n",
+                max_size);
+
+      }
+
+      max_size = 128;
+      do_cast = 1;
+
+    }
+
+    // do we need to cast?
     switch (max_size) {
 
       case 8:
@@ -293,61 +359,42 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
       case 32:
       case 64:
       case 128:
+        cast_size = max_size;
         break;
       default:
-        if (!be_quiet)
-          fprintf(stderr, "Cannot handle this compare bit size: %u\n",
-                  max_size);
-        continue;
+        cast_size = 128;
+        do_cast = 1;
 
     }
 
-    CmpInst *cmpInst = dyn_cast<CmpInst>(selectcmpInst);
+    if (do_cast) {
 
-    if (cmpInst) switch (cmpInst->getPredicate()) {
+      Value *V0 = IRB.CreateBitCast(op0, IntegerType::get(C, cast_size));
+      Value *V1 = IRB.CreateBitCast(op1, IntegerType::get(C, cast_size));
+      args.push_back(V0);
+      args.push_back(V1);
 
-        case CmpInst::ICMP_NE:
-        case CmpInst::FCMP_UNE:
-        case CmpInst::FCMP_ONE:
-          break;
-        case CmpInst::ICMP_EQ:
-        case CmpInst::FCMP_UEQ:
-        case CmpInst::FCMP_OEQ:
-          attr += 1;
-          break;
-        case CmpInst::ICMP_UGT:
-        case CmpInst::ICMP_SGT:
-        case CmpInst::FCMP_OGT:
-        case CmpInst::FCMP_UGT:
-          attr += 2;
-          break;
-        case CmpInst::ICMP_ULT:
-        case CmpInst::ICMP_SLT:
-        case CmpInst::FCMP_OLT:
-        case CmpInst::FCMP_ULT:
-          attr += 4;
-          break;
-        case CmpInst::ICMP_UGE:
-        case CmpInst::ICMP_SGE:
-        case CmpInst::FCMP_OGE:
-        case CmpInst::FCMP_UGE:
-          attr += 3;
-          break;
-        case CmpInst::ICMP_ULE:
-        case CmpInst::ICMP_SLE:
-        case CmpInst::FCMP_OLE:
-        case CmpInst::FCMP_ULE:
-          attr += 5;
-          break;
-        default:
-          break;
+    } else {
 
-      }
+      args.push_back(op0);
+      args.push_back(op1);
+
+    }
 
     ConstantInt *attribute = ConstantInt::get(Int8Ty, attr);
     args.push_back(attribute);
 
-    switch (max_size) {
+    if (cast_size != max_size) {
+
+      ConstantInt *bitsize = ConstantInt::get(Int8Ty, (max_size / 8) - 1);
+      args.push_back(bitsize);
+
+    }
+
+    fprintf(stderr, "_ExtInt(%u) castsize %u with attribute %u didcast %u\n",
+            max_size, cast_size, attr, do_cast);
+
+    switch (cast_size) {
 
       case 8:
         IRB.CreateCall(cmplogHookIns1, args);
@@ -362,9 +409,16 @@ bool CmpLogInstructions::hookInstrs(Module &M) {
         IRB.CreateCall(cmplogHookIns8, args);
         break;
       case 128:
-        IRB.CreateCall(cmplogHookIns16, args);
-        break;
-      default:
+        if (max_size == 128) {
+
+          IRB.CreateCall(cmplogHookIns16, args);
+
+        } else {
+
+          IRB.CreateCall(cmplogHookInsN, args);
+
+        }
+
         break;
 
     }

@@ -119,17 +119,32 @@ typedef int128_t s128;
   })
 
 // It is impossible to define 128 bit constants, so ...
-#define SWAP128(_x)                              \
-  ({                                             \
-                                                 \
-    u128  _res = (_x), _ret;                     \
-    char *d = (char *)&_ret, *s = (char *)&_res; \
-    int   i;                                     \
-    for (i = 0; i < 16; i++)                     \
-      d[15 - i] = s[i];                          \
-    (u128) _ret;                                 \
-                                                 \
-  })
+#if (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+  #define SWAPN(_x, _l)                            \
+    ({                                             \
+                                                   \
+      u128  _res = (_x), _ret;                     \
+      char *d = (char *)&_ret, *s = (char *)&_res; \
+      int   i;                                     \
+      for (i = 0; i < 16; i++)                     \
+        d[15 - 1 - i] = s[i];                      \
+      _res >>= (128 - (_l));                       \
+      (u128) _ret;                                 \
+                                                   \
+    })
+#else
+  #define SWAPN(_x, _l)                            \
+    ({                                             \
+                                                   \
+      u128  _res = (_x), _ret;                     \
+      char *d = (char *)&_ret, *s = (char *)&_res; \
+      int   i;                                     \
+      for (i = 0; i < 16; i++)                     \
+        d[15 - 1 - i] = s[i];                      \
+      (u128) _ret;                                 \
+                                                   \
+    })
+#endif
 
 #ifdef AFL_LLVM_PASS
   #if defined(__linux__) || !defined(__ANDROID__)
