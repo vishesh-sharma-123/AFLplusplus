@@ -241,7 +241,7 @@ static u8 colorization(afl_state_t *afl, u8 *buf, u32 len, u64 exec_cksum,
       in speed - how could the same path have a much different speed
       though ...*/
     if (cksum != exec_cksum ||
-        ((stop_us - start_us > 3 * afl->queue_cur->exec_us) &&
+        (unlikely(stop_us - start_us > 3 * afl->queue_cur->exec_us) &&
          likely(!afl->fixed_seed))) {
 
       memcpy(buf + rng->start, backup + rng->start, s);

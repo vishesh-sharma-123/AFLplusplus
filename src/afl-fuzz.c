@@ -1648,7 +1648,7 @@ int main(int argc, char **argv_orig, char **envp) {
           if (unlikely(afl->shm.cmplog_mode &&
                        afl->cmplog_max_filesize < MAX_FILE)) {
 
-            afl->cmplog_max_filesize = (afl->cmplog_max_filesize << 4);
+            afl->cmplog_max_filesize <<= 4;
 
           }
 
