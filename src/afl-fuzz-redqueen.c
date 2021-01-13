@@ -601,7 +601,8 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
       // if this is an fcmp (attr & 8 == 8) then do not compare the patterns -
       // due to a bug in llvm dynamic float bitcasts do not work :(
       // the value 16 means this is a +- 1.0 test case
-      if (its_len >= 8 && *buf_64 == pattern && *o_buf_64 == o_pattern) {
+      if (its_len >= 8 &&
+          ((*buf_64 == pattern && *o_buf_64 == o_pattern) || attr >= 16)) {
 
         u64 tmp_64 = *buf_64;
         *buf_64 = repl;
@@ -637,8 +638,9 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
       //         its_len, *buf_32, pattern, *o_buf_32, o_pattern, idx, attr,
       //         repl, changed_val);
 
-      if (its_len >= 4 && *buf_32 == (u32)pattern &&
-          *o_buf_32 == (u32)o_pattern) {
+      if (its_len >= 4 &&
+          ((*buf_32 == (u32)pattern && *o_buf_32 == (u32)o_pattern) ||
+           attr >= 16)) {
 
         u32 tmp_32 = *buf_32;
         *buf_32 = (u32)repl;
@@ -669,7 +671,7 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
       if (its_len >= 2 &&
           ((*buf_16 == (u16)pattern && *o_buf_16 == (u16)o_pattern) ||
-           attr == 0)) {
+           attr >= 16)) {
 
         u16 tmp_16 = *buf_16;
         *buf_16 = (u16)repl;
@@ -697,7 +699,8 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
     if (*status != 1) {  // u8
 
       if (its_len >= 1 &&
-          ((*buf_8 == (u8)pattern && *o_buf_8 == (u8)o_pattern) || attr == 0)) {
+          ((*buf_8 == (u8)pattern && *o_buf_8 == (u8)o_pattern) ||
+           attr >= 16)) {
 
         u8 tmp_8 = *buf_8;
         *buf_8 = (u8)repl;
