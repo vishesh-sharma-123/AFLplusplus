@@ -407,6 +407,9 @@ static u8 its_fuzz(afl_state_t *afl, u8 *buf, u32 len, u8 *status) {
 
   if (unlikely(new_hit_cnt != orig_hit_cnt)) {
 
+#ifdef _DEBUG
+    fprintf(stderr, "NEW FIND\n");
+#endif
     *status = 1;
 
   } else {
@@ -511,7 +514,8 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
   unsigned long long unum;
   long long          num;
 
-  if (lvl & 2) {
+  // reverse atoi()/strnu?toll() is expensive, so we only to it in lvl == 3
+  if (lvl & 4) {
 
     if (afl->queue_cur->is_ascii) {
 
@@ -527,37 +531,61 @@ static u8 cmp_extend_encoding(afl_state_t *afl, struct cmp_header *h,
 
     }
 
-    if (use_num && (u64)num == pattern) {
+#ifdef _DEBUG
+    if (idx == 0)
+      fprintf(stderr, "ASCII is=%u use_num=%u use_unum=%u idx=%u %llx==%llx\n",
+              afl->queue_cur->is_ascii, use_num, use_unum, idx, num, pattern);
+#endif
 
+    // num is likely not pattern as atoi(
+    if (use_num && ((u64)num == pattern || !num)) {
+
+      u8     tmp_buf[32];
+      size_t num_len = snprintf(tmp_buf, sizeof(tmp_buf), "%lld", repl);
       size_t old_len = endptr - buf_8;
-      size_t num_len = snprintf(NULL, 0, "%lld", num);
 
       u8 *new_buf = afl_realloc((void **)&afl->out_scratch_buf, len + num_len);
       if (unlikely(!new_buf)) { PFATAL("alloc"); }
-      memcpy(new_buf, buf, idx);
 
-      snprintf(new_buf + idx, num_len, "%lld", num);
+      memcpy(new_buf, buf, idx);
+      memcpy(new_buf + idx, tmp_buf, num_len);
       memcpy(new_buf + idx + num_len, buf_8 + old_len, len - idx - old_len);
+
+      if (new_buf[idx + num_len] >= '0' && new_buf[idx + num_len] <= '9') {
+
+        new_buf[idx + num_len] = ' ';
+
+      }
 
       if (unlikely(its_fuzz(afl, new_buf, len, status))) { return 1; }
 
-    } else if (use_unum && unum == pattern) {
+    } else if (use_unum && (unum == pattern || !unum)) {
 
+      u8     tmp_buf[32];
+      size_t num_len = snprintf(tmp_buf, sizeof(tmp_buf), "%llu", repl);
       size_t old_len = endptr - buf_8;
-      size_t num_len = snprintf(NULL, 0, "%llu", unum);
 
       u8 *new_buf = afl_realloc((void **)&afl->out_scratch_buf, len + num_len);
       if (unlikely(!new_buf)) { PFATAL("alloc"); }
-      memcpy(new_buf, buf, idx);
 
-      snprintf(new_buf + idx, num_len, "%llu", unum);
+      memcpy(new_buf, buf, idx);
+      memcpy(new_buf + idx, tmp_buf, num_len);
       memcpy(new_buf + idx + num_len, buf_8 + old_len, len - idx - old_len);
+
+      if (new_buf[idx + num_len] >= '0' && new_buf[idx + num_len] <= '9') {
+
+        new_buf[idx + num_len] = ' ';
+
+      }
 
       if (unlikely(its_fuzz(afl, new_buf, len, status))) { return 1; }
 
     }
 
   }
+
+  // we only allow this for ascii2integer (above)
+  if (unlikely(pattern == o_pattern)) { return 0; }
 
   if ((lvl & 1) || ((lvl & 2) && (attr >= 8 && attr <= 15)) || attr >= 16) {
 
@@ -1110,8 +1138,8 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
   u32                loggeds = h->hits;
   if (h->hits > CMP_MAP_H) { loggeds = CMP_MAP_H; }
 
-  u8  status = 0;
-  u8  found_one = 0;
+  u8 status = 0;
+  u8 found_one = 0;
 
   /* loop cmps are useless, detect and ignore them */
   u128        s128_v0 = 0, s128_v1 = 0, orig_s128_v0 = 0, orig_s128_v1 = 0;
@@ -1166,9 +1194,6 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
     }
 
     struct cmp_operands *orig_o = &afl->orig_cmp_map->log[key][i];
-
-    // skip uncontrolled
-    if (orig_o->v0 == o->v0 && orig_o->v1 == o->v1) { continue; }
 
     // opt not in the paper
     for (j = 0; j < i; ++j) {
@@ -1348,7 +1373,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
       // if we got here their own special trials failed and it might just be
       // a cast from e.g. u64 to u128 from the input data.
 
-      if (o->v0 != orig_o->v0 && orig_o->v0 != orig_o->v1) {
+      if ((o->v0 != orig_o->v0 || lvl >= 4) && orig_o->v0 != orig_o->v1) {
 
         if (unlikely(cmp_extend_encoding(
                 afl, h, o->v0, o->v1, orig_o->v0, orig_o->v1, h->attribute, idx,
@@ -1368,7 +1393,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
       }
 
       status = 0;
-      if (o->v1 != orig_o->v1 && orig_o->v0 != orig_o->v1) {
+      if ((o->v1 != orig_o->v1 || lvl >= 4) && orig_o->v0 != orig_o->v1) {
 
         if (unlikely(cmp_extend_encoding(
                 afl, h, o->v1, o->v0, orig_o->v1, orig_o->v0, h->attribute, idx,
@@ -1488,7 +1513,7 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
   if (h->hits > CMP_MAP_RTN_H) { loggeds = CMP_MAP_RTN_H; }
 
   u8 status = 0;
-  u8  found_one = 0;
+  u8 found_one = 0;
 
   for (i = 0; i < loggeds; ++i) {
 
@@ -1687,10 +1712,19 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
   afl->stage_max = 0;
   afl->stage_cur = 0;
 
-  u32 lvl = 0;
+  u32 lvl;
   u32 cmplog_done = afl->queue_cur->colorized;
   u32 cmplog_lvl = afl->cmplog_lvl;
-  if (!cmplog_done) { lvl = 1; }
+  if (!cmplog_done) {
+
+    lvl = 1;
+
+  } else {
+
+    lvl = 0;
+
+  }
+
   if (cmplog_lvl >= 2 && cmplog_done < 2) { lvl += 2; }
   if (cmplog_lvl >= 3 && cmplog_done < 3) { lvl += 4; }
 
@@ -1701,6 +1735,10 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
 
     if (afl->pass_stats[k].faileds == 0xff ||
         afl->pass_stats[k].total == 0xff) {
+
+#ifdef _DEBUG
+      fprintf(stderr, "DISABLED %u\n", k);
+#endif
 
       afl->shm.cmp_map->headers[k].hits = 0;  // ignore this cmp
 
