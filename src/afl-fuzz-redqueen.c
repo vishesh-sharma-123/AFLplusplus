@@ -1111,7 +1111,6 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
   if (h->hits > CMP_MAP_H) { loggeds = CMP_MAP_H; }
 
   u8  status = 0;
-  u32 fails;
   u8  found_one = 0;
 
   /* loop cmps are useless, detect and ignore them */
@@ -1144,8 +1143,6 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
   if ((h->attribute & 8) && lvl < 2) return 0;
 
   for (i = 0; i < loggeds; ++i) {
-
-    fails = 0;
 
     struct cmp_operands *o = &afl->shm.cmp_map->log[key][i];
 
@@ -1235,7 +1232,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
     }
 
-    for (idx = 0; idx < len /*&& fails < 8*/; ++idx) {
+    for (idx = 0; idx < len; ++idx) {
 
       if (have_taint) {
 
@@ -1274,11 +1271,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
         }
 
-        if (status == 2) {
-
-          ++fails;
-
-        } else if (status == 1) {
+        if (status == 1) {
 
           found_one = 1;
           break;
@@ -1298,11 +1291,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
         }
 
-        if (status == 2) {
-
-          ++fails;
-
-        } else if (status == 1) {
+        if (status == 1) {
 
           found_one = 1;
           break;
@@ -1326,11 +1315,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
         }
 
-        if (status == 2) {
-
-          ++fails;
-
-        } else if (status == 1) {
+        if (status == 1) {
 
           found_one = 1;
           break;
@@ -1350,11 +1335,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
         }
 
-        if (status == 2) {
-
-          ++fails;
-
-        } else if (status == 1) {
+        if (status == 1) {
 
           found_one = 1;
           break;
@@ -1379,11 +1360,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
       }
 
-      if (status == 2) {
-
-        ++fails;
-
-      } else if (status == 1) {
+      if (status == 1) {
 
         found_one = 1;
         break;
@@ -1403,11 +1380,7 @@ static u8 cmp_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
       }
 
-      if (status == 2) {
-
-        ++fails;
-
-      } else if (status == 1) {
+      if (status == 1) {
 
         found_one = 1;
         break;
@@ -1515,13 +1488,9 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
   if (h->hits > CMP_MAP_RTN_H) { loggeds = CMP_MAP_RTN_H; }
 
   u8 status = 0;
-  // opt not in the paper
-  u32 fails = 0;
   u8  found_one = 0;
 
   for (i = 0; i < loggeds; ++i) {
-
-    fails = 0;
 
     struct cmpfn_operands *o =
         &((struct cmpfn_operands *)afl->shm.cmp_map->log[key])[i];
@@ -1557,7 +1526,7 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
     }
 
-    for (idx = 0; idx < len /*&& fails < 8*/; ++idx) {
+    for (idx = 0; idx < len; ++idx) {
 
       if (have_taint) {
 
@@ -1589,11 +1558,7 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
       }
 
-      if (status == 2) {
-
-        ++fails;
-
-      } else if (status == 1) {
+      if (status == 1) {
 
         found_one = 1;
         break;
@@ -1610,11 +1575,7 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
 
       }
 
-      if (status == 2) {
-
-        ++fails;
-
-      } else if (status == 1) {
+      if (status == 1) {
 
         found_one = 1;
         break;
@@ -1626,7 +1587,7 @@ static u8 rtn_fuzz(afl_state_t *afl, u32 key, u8 *orig_buf, u8 *buf, u32 len,
     // If failed, add to dictionary
     if (!found_one) {
 
-      if (afl->pass_stats[key].total == 0) {
+      if (unlikely(!afl->pass_stats[key].total)) {
 
         maybe_add_auto(afl, o->v0, SHAPE_BYTES(h->shape));
         maybe_add_auto(afl, o->v1, SHAPE_BYTES(h->shape));
@@ -1738,9 +1699,7 @@ u8 input_to_state_stage(afl_state_t *afl, u8 *orig_buf, u8 *buf, u32 len,
 
     if (!afl->shm.cmp_map->headers[k].hits) { continue; }
 
-    if (/*afl->pass_stats[k].total &&
-        (rand_below(afl, afl->pass_stats[k].total) >=
-             afl->pass_stats[k].faileds ||*/
+    if (afl->pass_stats[k].faileds == 0xff ||
         afl->pass_stats[k].total == 0xff) {
 
       afl->shm.cmp_map->headers[k].hits = 0;  // ignore this cmp
